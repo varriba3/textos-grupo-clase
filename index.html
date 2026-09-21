@@ -181,8 +181,18 @@
     <div class="camp"><label>Títol</label><input id="edTitol"></div>
     <div class="camp"><label>Categoria</label><input id="edCateg"></div>
     <div class="camp"><label>Text</label><textarea id="edCos" style="min-height:220px"></textarea></div>
-      <p class="muted">Fes clic per inserir un camp al punt on tinguis el cursor:</p>
+    <p class="muted">Insereix un camp del grup classe al punt on tinguis el cursor:</p>
     <div id="edCampsDisp"></div>
+    <p class="muted" style="margin-top:10px">
+      Per a un camp propi d'aquesta plantilla, escriu-lo directament amb dobles claus,
+      per exemple <code>{{data_reunio}}</code>, i configura'l a sota.<br>
+      Per a una part del text que només ha de sortir si el camp està emplenat,
+      envolta-la amb dobles claudàtors:
+      <code>[[ El dia {{data_reunio}}. ]]</code>
+    </p>
+    <button id="btnBlocOpcional" type="button">Envolta la selecció amb [[ ]]</button>
+    <h3 style="font-size:15px;margin:16px 0 4px">Camps d'aquesta plantilla</h3>
+    <div id="edCampsPlantilla"></div>
   </div>
   <div class="dlg-peu">
     <button id="btnCancelPlantilla">Cancel·la</button>
@@ -488,12 +498,97 @@ function inserirMarcador(clau){
   ta.selectionStart = ta.selectionEnd = i + txt.length;
 }
 
+$("#btnBlocOpcional").onclick = () => {
+  const ta = $("#edCos");
+  const i = ta.selectionStart ?? 0, f = ta.selectionEnd ?? i;
+  const dins = ta.value.slice(i,f) || " escriu aquí la part opcional ";
+  ta.value = ta.value.slice(0,i) + "[[" + dins + "]]" + ta.value.slice(f);
+  ta.focus();
+  ta.selectionStart = i + 2; ta.selectionEnd = i + 2 + dins.length;
+  renderCampsPlantilla();
+};
+
 let plantillaEnEdicio = null;
+
+/* Configuració dels camps propis de cada plantilla */
+function renderCampsPlantilla(){
+  const cont = $("#edCampsPlantilla");
+  const previs = llegirCampsPlantilla();          // conserva el que s'estigui editant
+  const guardats = (plantillaEnEdicio && plantillaEnEdicio.campsPropis) || {};
+  const claus = clausDe($("#edCos").value);
+  cont.innerHTML = claus.length ? "" :
+    '<p class="muted">Encara no hi ha cap camp dins del text.</p>';
+  claus.forEach(clau => {
+    const glob = campDe(clau);
+    const cfg = previs[clau] || guardats[clau] || {};
+    const d = document.createElement("div");
+    d.className = "llista-item"; d.dataset.clau = clau;
+    d.innerHTML = `<h3><code>{{${esc(clau)}}}</code></h3>`;
+
+    if (glob){
+      d.insertAdjacentHTML("beforeend",
+        `<p class="muted">Camp del grup classe: <strong>${esc(glob.etiqueta)}</strong>.
+         Es precarrega amb el valor del grup.</p>`);
+    } else {
+      const w = document.createElement("div");
+      w.innerHTML = `<div class="camp"><label>Nom visible</label>
+          <input class="js-etiqueta" value="${esc(cfg.etiqueta || clau)}"></div>
+        <div class="camp"><label>Tipus</label>
+          <select class="js-tipus">
+            <option value="text">Text lliure</option>
+            <option value="llista">Llista d'opcions</option>
+          </select></div>
+        <div class="camp js-capsa-opcions"><label>Opcions (una per línia)</label>
+          <textarea class="js-opcions" style="min-height:80px">${
+            esc((cfg.opcions||[]).join("\n"))}</textarea></div>`;
+      const selT = w.querySelector(".js-tipus");
+      selT.value = cfg.tipus === "llista" ? "llista" : "text";
+      const capsa = w.querySelector(".js-capsa-opcions");
+      const sync = () => capsa.classList.toggle("oculta", selT.value !== "llista");
+      selT.onchange = sync; sync();
+      d.append(w);
+    }
+
+    const lab = document.createElement("label");
+    lab.style.cssText = "display:flex;gap:6px;align-items:center;color:inherit";
+    const chk = document.createElement("input");
+    chk.type = "checkbox"; chk.className = "js-opcional";
+    chk.style.width = "auto"; chk.checked = !!cfg.opcional;
+    lab.append(chk, document.createTextNode("Camp opcional (es pot deixar buit)"));
+    d.append(lab);
+    cont.append(d);
+  });
+}
+
+function llegirCampsPlantilla(){
+  const res = {};
+  $("#edCampsPlantilla").querySelectorAll("[data-clau]").forEach(d => {
+    const o = { opcional: d.querySelector(".js-opcional").checked };
+    const et = d.querySelector(".js-etiqueta");
+    if (et){
+      o.etiqueta = et.value.trim() || d.dataset.clau;
+      o.tipus = d.querySelector(".js-tipus").value;
+      o.opcions = d.querySelector(".js-opcions").value
+                    .split("\n").map(s=>s.trim()).filter(Boolean);
+    }
+    res[d.dataset.clau] = o;
+  });
+  return res;
+}
+
+let temporitzador;
+$("#edCos").addEventListener("input", () => {
+  clearTimeout(temporitzador);
+  temporitzador = setTimeout(renderCampsPlantilla, 500);
+});
+
 function obrirEdicio(p){
   plantillaEnEdicio = p;
   $("#edTitol").value = p.titol || "";
   $("#edCateg").value = p.categoria || "";
   $("#edCos").value = p.cos || "";
+  $("#edCampsPlantilla").innerHTML = "";
+  renderCampsPlantilla();
   $("#dlgPlantilla").showModal();
 }
 $("#btnCancelPlantilla").onclick = () => $("#dlgPlantilla").close();
@@ -501,7 +596,8 @@ $("#btnDesarPlantilla").onclick = async () => {
   await setDoc(doc(db,"users",uid,"plantilles",plantillaEnEdicio.id), {
     titol: $("#edTitol").value.trim(),
     categoria: $("#edCateg").value.trim(),
-    cos: $("#edCos").value
+    cos: $("#edCos").value,
+    campsPropis: llegirCampsPlantilla()
   });
   $("#dlgPlantilla").close();
   avis("Plantilla desada.");
@@ -545,6 +641,48 @@ function clausDe(text){
   return [...new Set([...String(text||"").matchAll(MARCADOR)].map(m=>m[1].trim()))];
 }
 
+/* Definició efectiva d'un camp: mana la configuració pròpia de la plantilla,
+   i si no n'hi ha, la del camp global dels grups classe */
+function defGeneracio(clau, p){
+  const loc = (p.campsPropis || {})[clau] || null;
+  const glob = campDe(clau);
+  return {
+    clau: glob ? glob.clau : clau,
+    etiqueta: (loc && loc.etiqueta) || (glob && glob.etiqueta) || clau,
+    tipus: (loc && loc.tipus) || (glob && glob.tipus) || "text",
+    opcions: (loc && loc.opcions && loc.opcions.length)
+               ? loc.opcions : ((glob && glob.opcions) || []),
+    opcional: !!(loc && loc.opcional),
+    delGrup: !!glob
+  };
+}
+
+/* Esborra els blocs [[ ... ]] que continguin algun camp buit */
+function aplicaBlocsOpcionals(text, valors){
+  let out = String(text || "");
+  for (let i = 0; i < 20; i++){
+    const previ = out;
+    out = out.replace(/\[\[([^\[\]]*)\]\]/g, (tros, dins, pos, tot) => {
+      const cl = [...dins.matchAll(MARCADOR)].map(m => m[1].trim());
+      const hiHaBuit = cl.some(k => !String(valors[normalitza(k)] || "").trim());
+      if (!cl.length || !hiHaBuit) return dins;
+      const abans = tot[pos-1], despres = tot[pos + tros.length];
+      // si el bloc separava dues paraules, hi deixem un espai
+      return (abans && despres && !/\s/.test(abans) && !/\s/.test(despres)) ? " " : "";
+    });
+    if (out === previ) break;
+  }
+  return out;
+}
+
+function netejaText(t){
+  return t.replace(/[ \t]{2,}/g, " ")
+          .replace(/ +([,.;:!?])/g, "$1")
+          .replace(/\n[ \t]+\n/g, "\n\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+}
+
 function iniciarGeneracio(p){
   const grup = grups.find(g => g.id === $("#selGrup").value);
   const claus = clausDe(p.cos);
@@ -554,23 +692,34 @@ function iniciarGeneracio(p){
     '<p class="muted">Aquesta plantilla no té cap camp per completar.</p>';
   const controls = [];
   claus.forEach(clau => {
-    const def = campDe(clau);
+    const def = defGeneracio(clau, p);
     const w = document.createElement("div");
     w.className = "camp";
-    w.innerHTML = `<label>${esc(def ? def.etiqueta : clau)}${
-      def ? "" : ' <span style="color:#c0392b">(no definit a «Camps»)</span>'}</label>`;
-    const ctrl = controlValor(def, (def && grup && grup.valors && grup.valors[def.clau]) || "");
-    controls.push({ clau, ctrl });
+    w.innerHTML = `<label>${esc(def.etiqueta)}${
+      def.opcional ? ' <span class="muted">(opcional)</span>' : ""}${
+      def.delGrup ? "" : ' <span class="muted">· camp d\'aquesta plantilla</span>'}</label>`;
+    const inicial = def.delGrup && grup && grup.valors ? (grup.valors[def.clau] || "") : "";
+    const ctrl = controlValor(def, inicial);
+    controls.push({ clau, def, ctrl });
     w.append(ctrl.el); cont.append(w);
   });
+
   const dlg = $("#dlgGenerar");
+  const form = dlg.querySelector("form");
+  form.onsubmit = e => {
+    if (e.submitter && e.submitter.value === "ok"){
+      const falta = controls.find(c => !c.def.opcional && !String(c.ctrl.llegir()).trim());
+      if (falta){ e.preventDefault(); avis("Falta emplenar: " + falta.def.etiqueta); }
+    }
+  };
   dlg.onclose = () => {
     if (dlg.returnValue !== "ok") return;
     const valors = {};
     controls.forEach(({clau, ctrl}) => valors[normalitza(clau)] = ctrl.llegir());
-    const text = String(p.cos||"").replace(MARCADOR,
-      (_,k) => { const v = valors[normalitza(k)]; return v !== undefined ? v : ""; });
-    mostrarResultat(text);
+    let text = aplicaBlocsOpcionals(p.cos, valors);
+    text = text.replace(MARCADOR,
+      (_, k) => { const v = valors[normalitza(k)]; return v !== undefined ? v : ""; });
+    mostrarResultat(netejaText(text));
   };
   dlg.returnValue = "";
   dlg.showModal();
