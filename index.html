@@ -161,6 +161,19 @@
   </div>
 </dialog>
 
+<!-- Diàleg: opcions d'un camp -->
+<dialog id="dlgOpcions">
+  <div class="dlg-cos">
+    <h2 id="opcTitol" style="margin-top:0;font-size:17px"></h2>
+    <p class="muted">Escriu una opció per línia. Seran les respostes disponibles a la llista.</p>
+    <textarea id="opcText" style="min-height:200px" placeholder="Noi&#10;Noia&#10;L'alumne/a"></textarea>
+  </div>
+  <div class="dlg-peu">
+    <button id="btnCancelOpcions">Cancel·la</button>
+    <button id="btnDesarOpcions" class="primary">Desa</button>
+  </div>
+</dialog>
+
 <!-- Diàleg: editar plantilla -->
 <dialog id="dlgPlantilla">
   <div class="dlg-cos">
@@ -281,23 +294,86 @@ $("#btnAfegirCamp").onclick = async () => {
   if (!clau) clau = etiqueta.toLowerCase().normalize("NFD")
       .replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
   if (camps.some(c => c.clau === clau)) return avis("Ja existeix un camp amb aquesta clau.");
-  await addDoc(col("camps"), { etiqueta, clau });
+  await addDoc(col("camps"), { etiqueta, clau, tipus:"text", opcions:[] });
   $("#nouCampEtiqueta").value = ""; $("#nouCampClau").value = "";
 };
+
+/* Control d'entrada: casella de text o llista desplegable segons el tipus de camp */
+function controlValor(def, valor, onCanvi){
+  const opcions = (def && def.tipus === "llista" && Array.isArray(def.opcions))
+    ? def.opcions.filter(o => o !== "") : [];
+  if (!opcions.length){
+    const inp = document.createElement("input");
+    inp.value = valor || "";
+    if (onCanvi) inp.onchange = () => onCanvi(inp.value);
+    return { el: inp, llegir: () => inp.value };
+  }
+  const wrap = document.createElement("div");
+  const sel = document.createElement("select");
+  sel.innerHTML = '<option value="">(sense valor)</option>'
+    + opcions.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join("")
+    + '<option value="\u0000altre">Altre… (escriure)</option>';
+  const inp = document.createElement("input");
+  inp.placeholder = "Escriu el valor";
+  inp.style.marginTop = "6px";
+  if (valor && !opcions.includes(valor)){
+    sel.value = "\u0000altre"; inp.value = valor;
+  } else {
+    sel.value = valor || ""; inp.classList.add("oculta");
+  }
+  const llegir = () => sel.value === "\u0000altre" ? inp.value : sel.value;
+  sel.onchange = () => {
+    inp.classList.toggle("oculta", sel.value !== "\u0000altre");
+    if (sel.value === "\u0000altre") inp.focus();
+    if (onCanvi) onCanvi(llegir());
+  };
+  inp.onchange = () => onCanvi && onCanvi(llegir());
+  wrap.append(sel, inp);
+  return { el: wrap, llegir };
+}
 
 function pintaCamps(){
   $("#llistaCamps").innerHTML = camps.length ? "" :
     '<p class="muted">Encara no hi ha cap camp.</p>';
   camps.forEach(c => {
+    const opcions = Array.isArray(c.opcions) ? c.opcions : [];
     const d = document.createElement("div");
     d.className = "llista-item";
     d.innerHTML = `<h3>${esc(c.etiqueta)}</h3>
-      <p class="muted">A les plantilles: <code>{{${esc(c.clau)}}}</code></p>
-      <button class="danger">Elimina</button>`;
-    d.querySelector("button").onclick = async () => {
+      <p class="muted">A les plantilles: <code>{{${esc(c.clau)}}}</code></p>`;
+
+    const fila = document.createElement("div");
+    fila.className = "row";
+    const selTipus = document.createElement("select");
+    selTipus.style.maxWidth = "220px";
+    selTipus.innerHTML = '<option value="text">Text lliure</option>'
+                       + '<option value="llista">Llista d\'opcions</option>';
+    selTipus.value = c.tipus === "llista" ? "llista" : "text";
+    selTipus.onchange = async () => {
+      await updateDoc(doc(db,"users",uid,"camps",c.id), { tipus: selTipus.value });
+      avis("Desat.");
+    };
+    fila.append(selTipus);
+
+    if (c.tipus === "llista"){
+      const bOpc = document.createElement("button");
+      bOpc.textContent = `Edita les opcions (${opcions.length})`;
+      bOpc.onclick = () => obrirOpcions(c);
+      fila.append(bOpc);
+    }
+    d.append(fila);
+
+    if (c.tipus === "llista" && opcions.length)
+      d.insertAdjacentHTML("beforeend",
+        `<p class="muted">Opcions: ${opcions.map(o=>esc(o)).join(" · ")}</p>`);
+
+    const bDel = document.createElement("button");
+    bDel.className = "danger"; bDel.textContent = "Elimina";
+    bDel.onclick = async () => {
       if (confirm(`Vols eliminar el camp "${c.etiqueta}"?`))
         await deleteDoc(doc(db,"users",uid,"camps",c.id));
     };
+    d.append(bDel);
     $("#llistaCamps").append(d);
   });
   const disp = $("#edCampsDisp");
@@ -312,6 +388,22 @@ function pintaCamps(){
     disp.append(b);
   });
 }
+
+/* Diàleg d'opcions d'un camp */
+let campEnEdicio = null;
+function obrirOpcions(c){
+  campEnEdicio = c;
+  $("#opcTitol").textContent = "Opcions de: " + c.etiqueta;
+  $("#opcText").value = (Array.isArray(c.opcions) ? c.opcions : []).join("\n");
+  $("#dlgOpcions").showModal();
+}
+$("#btnCancelOpcions").onclick = () => $("#dlgOpcions").close();
+$("#btnDesarOpcions").onclick = async () => {
+  const opcions = $("#opcText").value.split("\n").map(s=>s.trim()).filter(Boolean);
+  await updateDoc(doc(db,"users",uid,"camps",campEnEdicio.id), { opcions, tipus:"llista" });
+  $("#dlgOpcions").close();
+  avis("Opcions desades.");
+};
 
 /* ---------- Grups ---------- */
 $("#btnAfegirGrup").onclick = async () => {
@@ -332,13 +424,11 @@ function pintaGrups(){
       const w = document.createElement("div");
       w.className = "camp";
       w.innerHTML = `<label>${esc(c.etiqueta)}</label>`;
-      const inp = document.createElement("input");
-      inp.value = (g.valors && g.valors[c.clau]) || "";
-      inp.onchange = async () => {
-        await updateDoc(doc(db,"users",uid,"grups",g.id), { ["valors."+c.clau]: inp.value });
+      const ctrl = controlValor(c, (g.valors && g.valors[c.clau]) || "", async v => {
+        await updateDoc(doc(db,"users",uid,"grups",g.id), { ["valors."+c.clau]: v });
         avis("Desat.");
-      };
-      w.append(inp); d.append(w);
+      });
+      w.append(ctrl.el); d.append(w);
     });
     if (!camps.length) d.insertAdjacentHTML("beforeend",
       '<p class="muted">Afegeix camps a la pestanya «Camps» per omplir-los aquí.</p>');
@@ -462,22 +552,22 @@ function iniciarGeneracio(p){
   const cont = $("#dlgCamps");
   cont.innerHTML = claus.length ? "" :
     '<p class="muted">Aquesta plantilla no té cap camp per completar.</p>';
+  const controls = [];
   claus.forEach(clau => {
     const def = campDe(clau);
     const w = document.createElement("div");
     w.className = "camp";
     w.innerHTML = `<label>${esc(def ? def.etiqueta : clau)}${
       def ? "" : ' <span style="color:#c0392b">(no definit a «Camps»)</span>'}</label>`;
-    const inp = document.createElement("input");
-    inp.dataset.clau = clau;
-    inp.value = (def && grup && grup.valors && grup.valors[def.clau]) || "";
-    w.append(inp); cont.append(w);
+    const ctrl = controlValor(def, (def && grup && grup.valors && grup.valors[def.clau]) || "");
+    controls.push({ clau, ctrl });
+    w.append(ctrl.el); cont.append(w);
   });
   const dlg = $("#dlgGenerar");
   dlg.onclose = () => {
     if (dlg.returnValue !== "ok") return;
     const valors = {};
-    cont.querySelectorAll("input").forEach(i => valors[normalitza(i.dataset.clau)] = i.value);
+    controls.forEach(({clau, ctrl}) => valors[normalitza(clau)] = ctrl.llegir());
     const text = String(p.cos||"").replace(MARCADOR,
       (_,k) => { const v = valors[normalitza(k)]; return v !== undefined ? v : ""; });
     mostrarResultat(text);
