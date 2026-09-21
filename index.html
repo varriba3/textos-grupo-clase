@@ -1,5 +1,473 @@
 <!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><title>Prueba</title></head>
-<body><h1>Funciona</h1></body>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Textos per a grups classe</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --line:#dde1e7; --text:#1d2129;
+    --muted:#65707d; --accent:#2f6fed; --accent-soft:#e8f0fe; --danger:#c0392b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:var(--text)}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;
+         display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;flex:1}
+  main{max-width:1000px;margin:0 auto;padding:16px}
+  button{font:inherit;padding:8px 14px;border:1px solid var(--line);background:#fff;
+         border-radius:8px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.danger{color:var(--danger)}
+  input,select,textarea{font:inherit;padding:8px;border:1px solid var(--line);
+         border-radius:8px;width:100%;background:#fff;color:inherit}
+  textarea{min-height:120px;resize:vertical}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         padding:16px;margin-bottom:16px}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .tabs button[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent);
+         color:var(--accent);font-weight:600}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  .row > input,.row > select{flex:1;min-width:140px}
+  .muted{color:var(--muted);font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+  .grid button{text-align:left}
+  .llista-item{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+  .llista-item h3{margin:0 0 6px;font-size:15px}
+  dialog{border:none;border-radius:12px;padding:0;max-width:640px;width:92%}
+  dialog::backdrop{background:rgba(0,0,0,.4)}
+  .dlg-cos{padding:16px}
+  .dlg-peu{padding:12px 16px;border-top:1px solid var(--line);display:flex;
+           gap:8px;justify-content:flex-end}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+  .camp{margin-bottom:10px}
+  #avis{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);
+        background:#1d2129;color:#fff;padding:10px 16px;border-radius:8px;
+        opacity:0;transition:opacity .2s;pointer-events:none}
+  #avis.visible{opacity:1}
+  .oculta{display:none !important}
+  code{background:#eef1f5;padding:1px 5px;border-radius:4px;font-size:13px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Textos per a grups classe</h1>
+  <span id="usuari" class="muted"></span>
+  <button id="btnEntrar" class="primary">Entra amb Google</button>
+  <button id="btnSortir" class="oculta">Tanca la sessió</button>
+</header>
+
+<main>
+  <div id="benvinguda" class="panel">
+    <p>Inicia la sessió amb el teu compte de Google per veure i desar les teves dades.
+       Tot es desa al núvol i el podràs consultar des de qualsevol ordinador.</p>
+  </div>
+
+  <div id="app" class="oculta">
+    <div class="tabs" role="tablist">
+      <button data-tab="generar" role="tab" aria-selected="true">Generar text</button>
+      <button data-tab="grups" role="tab" aria-selected="false">Grups classe</button>
+      <button data-tab="camps" role="tab" aria-selected="false">Camps</button>
+      <button data-tab="plantilles" role="tab" aria-selected="false">Plantilles</button>
+    </div>
+
+    <!-- GENERAR -->
+    <section id="tab-generar">
+      <div class="panel">
+        <div class="row">
+          <div style="flex:1">
+            <label for="selGrup">Grup classe</label>
+            <select id="selGrup"></select>
+          </div>
+          <div style="flex:1">
+            <label for="cercaPlantilla">Cerca una plantilla</label>
+            <input id="cercaPlantilla" type="search" placeholder="Escriu per filtrar…">
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="muted">Fes clic al botó del text que vols generar.</p>
+        <div id="botonsPlantilles" class="grid"></div>
+      </div>
+    </section>
+
+    <!-- GRUPS -->
+    <section id="tab-grups" class="oculta">
+      <div class="panel">
+        <div class="row">
+          <input id="nouGrup" placeholder="Nom del grup nou (p. ex. 1r ESO A)">
+          <button class="primary" id="btnAfegirGrup">Afegeix grup</button>
+        </div>
+      </div>
+      <div id="llistaGrups"></div>
+    </section>
+
+    <!-- CAMPS -->
+    <section id="tab-camps" class="oculta">
+      <div class="panel">
+        <p class="muted">Els camps són les dades que es poden inserir dins els textos.
+          A les plantilles s'escriuen entre dobles claus: <code>{{clau}}</code>.</p>
+        <div class="row">
+          <input id="nouCampEtiqueta" placeholder="Nom visible (p. ex. Tutor/a)">
+          <input id="nouCampClau" placeholder="Clau (p. ex. tutor)">
+          <button class="primary" id="btnAfegirCamp">Afegeix camp</button>
+        </div>
+      </div>
+      <div id="llistaCamps"></div>
+    </section>
+
+    <!-- PLANTILLES -->
+    <section id="tab-plantilles" class="oculta">
+      <div class="panel">
+        <div class="row">
+          <input id="novaPlantillaTitol" placeholder="Títol de la plantilla (el text del botó)">
+          <input id="novaPlantillaCateg" placeholder="Categoria (opcional)">
+          <button class="primary" id="btnAfegirPlantilla">Afegeix plantilla</button>
+        </div>
+      </div>
+      <div id="llistaPlantilles"></div>
+    </section>
+  </div>
+</main>
+
+<!-- Diàleg: editar camps abans de generar -->
+<dialog id="dlgGenerar">
+  <form method="dialog">
+    <div class="dlg-cos">
+      <h2 id="dlgTitol" style="margin-top:0;font-size:17px"></h2>
+      <p class="muted">Revisa o edita les dades. Només s'aplicaran a aquest text.</p>
+      <div id="dlgCamps"></div>
+    </div>
+    <div class="dlg-peu">
+      <button value="cancel">Cancel·la</button>
+      <button value="ok" class="primary">Genera</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Diàleg: resultat -->
+<dialog id="dlgResultat">
+  <div class="dlg-cos">
+    <h2 style="margin-top:0;font-size:17px">Text generat</h2>
+    <textarea id="textResultat" style="min-height:260px"></textarea>
+    <p class="muted">S'ha copiat automàticament al porta-retalls.</p>
+  </div>
+  <div class="dlg-peu">
+    <button id="btnCopiarDeNou">Torna a copiar</button>
+    <button id="btnTancarResultat" class="primary">Tanca</button>
+  </div>
+</dialog>
+
+<!-- Diàleg: editar plantilla -->
+<dialog id="dlgPlantilla">
+  <div class="dlg-cos">
+    <h2 style="margin-top:0;font-size:17px">Edita la plantilla</h2>
+    <div class="camp"><label>Títol</label><input id="edTitol"></div>
+    <div class="camp"><label>Categoria</label><input id="edCateg"></div>
+    <div class="camp"><label>Text</label><textarea id="edCos" style="min-height:220px"></textarea></div>
+    <p class="muted">Camps disponibles: <span id="edCampsDisp"></span></p>
+  </div>
+  <div class="dlg-peu">
+    <button id="btnCancelPlantilla">Cancel·la</button>
+    <button id="btnDesarPlantilla" class="primary">Desa</button>
+  </div>
+</dialog>
+
+<div id="avis"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot }
+  from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA0EvJXr7yXqVvBCqvfRvA32-xDUaYSoBM",
+  authDomain: "prompts-ensenyament.firebaseapp.com",
+  projectId: "prompts-ensenyament",
+  storageBucket: "prompts-ensenyament.firebasestorage.app",
+  messagingSenderId: "672016786388",
+  appId: "1:672016786388:web:343b0d8bc75cc49ba32c41"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let uid = null;
+let camps = [];       // [{id, etiqueta, clau}]
+let grups = [];       // [{id, nom, valors:{clau:valor}}]
+let plantilles = [];  // [{id, titol, categoria, cos}]
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+function avis(text){
+  const a = $("#avis"); a.textContent = text; a.classList.add("visible");
+  clearTimeout(avis._t); avis._t = setTimeout(()=>a.classList.remove("visible"), 2200);
+}
+
+/* ---------- Sessió ---------- */
+$("#btnEntrar").onclick = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch(e){ avis("No s'ha pogut iniciar la sessió: " + e.code); }
+};
+$("#btnSortir").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, user => {
+  if (user){
+    uid = user.uid;
+    $("#usuari").textContent = user.email;
+    $("#btnEntrar").classList.add("oculta");
+    $("#btnSortir").classList.remove("oculta");
+    $("#benvinguda").classList.add("oculta");
+    $("#app").classList.remove("oculta");
+    escoltarDades();
+  } else {
+    uid = null;
+    $("#usuari").textContent = "";
+    $("#btnEntrar").classList.remove("oculta");
+    $("#btnSortir").classList.add("oculta");
+    $("#benvinguda").classList.remove("oculta");
+    $("#app").classList.add("oculta");
+  }
+});
+
+/* ---------- Dades ---------- */
+const col = nom => collection(db, "users", uid, nom);
+let deixarEscoltar = [];
+
+function escoltarDades(){
+  deixarEscoltar.forEach(f => f());
+  deixarEscoltar = [
+    onSnapshot(col("camps"), s => {
+      camps = s.docs.map(d => ({ id:d.id, ...d.data() }))
+                    .sort((a,b)=> (a.etiqueta||"").localeCompare(b.etiqueta||""));
+      pintaCamps(); pintaGrups(); pintaBotons();
+    }),
+    onSnapshot(col("grups"), s => {
+      grups = s.docs.map(d => ({ id:d.id, valors:{}, ...d.data() }))
+                    .sort((a,b)=> (a.nom||"").localeCompare(b.nom||""));
+      pintaGrups(); pintaSelectorGrup();
+    }),
+    onSnapshot(col("plantilles"), s => {
+      plantilles = s.docs.map(d => ({ id:d.id, ...d.data() }))
+        .sort((a,b)=> ((a.categoria||"")+(a.titol||"")).localeCompare((b.categoria||"")+(b.titol||"")));
+      pintaPlantilles(); pintaBotons();
+    })
+  ];
+}
+
+/* ---------- Pestanyes ---------- */
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x===b));
+    ["generar","grups","camps","plantilles"].forEach(t =>
+      $("#tab-"+t).classList.toggle("oculta", t !== b.dataset.tab));
+  };
+});
+
+/* ---------- Camps ---------- */
+$("#btnAfegirCamp").onclick = async () => {
+  const etiqueta = $("#nouCampEtiqueta").value.trim();
+  let clau = $("#nouCampClau").value.trim();
+  if (!etiqueta) return avis("Escriu el nom visible del camp.");
+  if (!clau) clau = etiqueta.toLowerCase().normalize("NFD")
+      .replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+  if (camps.some(c => c.clau === clau)) return avis("Ja existeix un camp amb aquesta clau.");
+  await addDoc(col("camps"), { etiqueta, clau });
+  $("#nouCampEtiqueta").value = ""; $("#nouCampClau").value = "";
+};
+
+function pintaCamps(){
+  $("#llistaCamps").innerHTML = camps.length ? "" :
+    '<p class="muted">Encara no hi ha cap camp.</p>';
+  camps.forEach(c => {
+    const d = document.createElement("div");
+    d.className = "llista-item";
+    d.innerHTML = `<h3>${esc(c.etiqueta)}</h3>
+      <p class="muted">A les plantilles: <code>{{${esc(c.clau)}}}</code></p>
+      <button class="danger">Elimina</button>`;
+    d.querySelector("button").onclick = async () => {
+      if (confirm(`Vols eliminar el camp "${c.etiqueta}"?`))
+        await deleteDoc(doc(db,"users",uid,"camps",c.id));
+    };
+    $("#llistaCamps").append(d);
+  });
+  $("#edCampsDisp").innerHTML = camps.map(c=>`<code>{{${esc(c.clau)}}}</code>`).join(" ") || "cap";
+}
+
+/* ---------- Grups ---------- */
+$("#btnAfegirGrup").onclick = async () => {
+  const nom = $("#nouGrup").value.trim();
+  if (!nom) return avis("Escriu un nom de grup.");
+  await addDoc(col("grups"), { nom, valors:{} });
+  $("#nouGrup").value = "";
+};
+
+function pintaGrups(){
+  const cont = $("#llistaGrups");
+  cont.innerHTML = grups.length ? "" : '<p class="muted">Encara no hi ha cap grup.</p>';
+  grups.forEach(g => {
+    const d = document.createElement("div");
+    d.className = "llista-item";
+    d.innerHTML = `<h3>${esc(g.nom)}</h3>`;
+    camps.forEach(c => {
+      const w = document.createElement("div");
+      w.className = "camp";
+      w.innerHTML = `<label>${esc(c.etiqueta)}</label>`;
+      const inp = document.createElement("input");
+      inp.value = (g.valors && g.valors[c.clau]) || "";
+      inp.onchange = async () => {
+        await updateDoc(doc(db,"users",uid,"grups",g.id), { ["valors."+c.clau]: inp.value });
+        avis("Desat.");
+      };
+      w.append(inp); d.append(w);
+    });
+    if (!camps.length) d.insertAdjacentHTML("beforeend",
+      '<p class="muted">Afegeix camps a la pestanya «Camps» per omplir-los aquí.</p>');
+    const esb = document.createElement("button");
+    esb.className = "danger"; esb.textContent = "Elimina el grup";
+    esb.onclick = async () => {
+      if (confirm(`Vols eliminar el grup "${g.nom}"?`))
+        await deleteDoc(doc(db,"users",uid,"grups",g.id));
+    };
+    d.append(esb);
+    cont.append(d);
+  });
+}
+
+function pintaSelectorGrup(){
+  const sel = $("#selGrup"), previ = sel.value;
+  sel.innerHTML = grups.map(g => `<option value="${g.id}">${esc(g.nom)}</option>`).join("")
+    || '<option value="">(cap grup)</option>';
+  if (grups.some(g=>g.id===previ)) sel.value = previ;
+}
+
+/* ---------- Plantilles ---------- */
+$("#btnAfegirPlantilla").onclick = async () => {
+  const titol = $("#novaPlantillaTitol").value.trim();
+  if (!titol) return avis("Escriu un títol.");
+  const categoria = $("#novaPlantillaCateg").value.trim();
+  const ref = await addDoc(col("plantilles"), { titol, categoria, cos:"" });
+  $("#novaPlantillaTitol").value = "";
+  setTimeout(()=>obrirEdicio({ id:ref.id, titol, categoria, cos:"" }), 300);
+};
+
+function pintaPlantilles(){
+  const cont = $("#llistaPlantilles");
+  cont.innerHTML = plantilles.length ? "" : '<p class="muted">Encara no hi ha cap plantilla.</p>';
+  plantilles.forEach(p => {
+    const d = document.createElement("div");
+    d.className = "llista-item";
+    d.innerHTML = `<h3>${esc(p.titol)}</h3>
+      <p class="muted">${esc(p.categoria||"Sense categoria")}</p>`;
+    const b1 = document.createElement("button"); b1.textContent = "Edita";
+    b1.onclick = () => obrirEdicio(p);
+    const b2 = document.createElement("button"); b2.className="danger"; b2.textContent="Elimina";
+    b2.onclick = async () => {
+      if (confirm(`Vols eliminar la plantilla "${p.titol}"?`))
+        await deleteDoc(doc(db,"users",uid,"plantilles",p.id));
+    };
+    d.append(b1," ",b2);
+    cont.append(d);
+  });
+}
+
+let plantillaEnEdicio = null;
+function obrirEdicio(p){
+  plantillaEnEdicio = p;
+  $("#edTitol").value = p.titol || "";
+  $("#edCateg").value = p.categoria || "";
+  $("#edCos").value = p.cos || "";
+  $("#dlgPlantilla").showModal();
+}
+$("#btnCancelPlantilla").onclick = () => $("#dlgPlantilla").close();
+$("#btnDesarPlantilla").onclick = async () => {
+  await setDoc(doc(db,"users",uid,"plantilles",plantillaEnEdicio.id), {
+    titol: $("#edTitol").value.trim(),
+    categoria: $("#edCateg").value.trim(),
+    cos: $("#edCos").value
+  });
+  $("#dlgPlantilla").close();
+  avis("Plantilla desada.");
+};
+
+/* ---------- Generar ---------- */
+$("#cercaPlantilla").oninput = pintaBotons;
+
+function pintaBotons(){
+  const q = $("#cercaPlantilla").value.trim().toLowerCase();
+  const cont = $("#botonsPlantilles");
+  cont.innerHTML = "";
+  const llista = plantilles.filter(p =>
+    !q || (p.titol+" "+(p.categoria||"")).toLowerCase().includes(q));
+  if (!llista.length){
+    cont.innerHTML = '<p class="muted">Cap plantilla per mostrar.</p>'; return;
+  }
+  llista.forEach(p => {
+    const b = document.createElement("button");
+    b.innerHTML = `<strong>${esc(p.titol)}</strong><br><span class="muted">${esc(p.categoria||"")}</span>`;
+    b.onclick = () => iniciarGeneracio(p);
+    cont.append(b);
+  });
+}
+
+function clausDe(text){
+  return [...new Set([...String(text||"").matchAll(/\{\{\s*([\w-]+)\s*\}\}/g)].map(m=>m[1]))];
+}
+
+function iniciarGeneracio(p){
+  const grup = grups.find(g => g.id === $("#selGrup").value);
+  const claus = clausDe(p.cos);
+  $("#dlgTitol").textContent = p.titol;
+  const cont = $("#dlgCamps");
+  cont.innerHTML = claus.length ? "" :
+    '<p class="muted">Aquesta plantilla no té cap camp per completar.</p>';
+  claus.forEach(clau => {
+    const def = camps.find(c => c.clau === clau);
+    const w = document.createElement("div");
+    w.className = "camp";
+    w.innerHTML = `<label>${esc(def ? def.etiqueta : clau)}</label>`;
+    const inp = document.createElement("input");
+    inp.dataset.clau = clau;
+    inp.value = (grup && grup.valors && grup.valors[clau]) || "";
+    w.append(inp); cont.append(w);
+  });
+  const dlg = $("#dlgGenerar");
+  dlg.onclose = () => {
+    if (dlg.returnValue !== "ok") return;
+    const valors = {};
+    cont.querySelectorAll("input").forEach(i => valors[i.dataset.clau] = i.value);
+    const text = String(p.cos||"").replace(/\{\{\s*([\w-]+)\s*\}\}/g,
+      (_,k) => valors[k] !== undefined ? valors[k] : "");
+    mostrarResultat(text);
+  };
+  dlg.returnValue = "";
+  dlg.showModal();
+}
+
+async function copiar(text){
+  try { await navigator.clipboard.writeText(text); avis("Copiat al porta-retalls."); }
+  catch(e){
+    const ta = $("#textResultat"); ta.focus(); ta.select();
+    try { document.execCommand("copy"); avis("Copiat al porta-retalls."); }
+    catch(_){ avis("Copia'l manualment (Ctrl+C)."); }
+  }
+}
+
+function mostrarResultat(text){
+  $("#textResultat").value = text;
+  $("#dlgResultat").showModal();
+  copiar(text);
+}
+$("#btnCopiarDeNou").onclick = () => copiar($("#textResultat").value);
+$("#btnTancarResultat").onclick = () => $("#dlgResultat").close();
+</script>
+</body>
 </html>
