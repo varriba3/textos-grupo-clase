@@ -424,6 +424,14 @@ function uneix(arr, format){
 
 /* Control d'entrada: casella de text o llista desplegable segons el tipus de camp */
 function controlValor(def, valor, onCanvi){
+  if (def && def.tipus === "llarg"){
+    const ta = document.createElement("textarea");
+    ta.value = valor || "";
+    ta.rows = 12;
+    ta.style.minHeight = "230px";
+    if (onCanvi) ta.onchange = () => onCanvi(ta.value);
+    return { el: ta, llegir: () => ta.value, ample: true };
+  }
   if (def && def.tipus === "multiple"){
     const opcions = (def.opcions || []).filter(Boolean);
     const triats = Array.isArray(valor) ? valor.slice()
@@ -516,10 +524,11 @@ function pintaCamps(){
     const selTipus = document.createElement("select");
     selTipus.style.maxWidth = "220px";
     selTipus.innerHTML = '<option value="text">Text lliure</option>'
+                       + '<option value="llarg">Text llarg (diverses línies)</option>'
                        + '<option value="llista">Llista d\'opcions</option>'
                        + '<option value="multiple">Llista d\'opcions (en pots triar diverses)</option>'
                        + '<option value="fitxes">Fitxes (diverses entrades amb subcamps)</option>';
-    selTipus.value = ["llista","multiple","fitxes"].includes(c.tipus) ? c.tipus : "text";
+    selTipus.value = ["llarg","llista","multiple","fitxes"].includes(c.tipus) ? c.tipus : "text";
     selTipus.onchange = async () => {
       await updateDoc(doc(db,"users",uid,"camps",c.id), { tipus: selTipus.value });
       avis("Desat.");
@@ -684,15 +693,23 @@ function editorFitxes(c, g){
   return cont;
 }
 
+const grupsOberts = new Set();   // quins grups estan desplegats
+
 function pintaGrups(){
   const cont = $("#llistaGrups");
   cont.innerHTML = grups.length ? "" : '<p class="muted">Encara no hi ha cap grup.</p>';
   grups.forEach(g => {
-    const d = document.createElement("div");
+    const d = document.createElement("details");
     d.className = "llista-item";
-    d.innerHTML = `<h3>${esc(g.nom)}</h3>`;
+    d.open = grupsOberts.has(g.id);
+    d.ontoggle = () => d.open ? grupsOberts.add(g.id) : grupsOberts.delete(g.id);
+    const sum = document.createElement("summary");
+    sum.style.cssText = "cursor:pointer;font-weight:600;font-size:15px;padding:2px 0";
+    sum.textContent = g.nom;
+    d.append(sum);
     const graella = document.createElement("div");
     graella.className = "cols2";
+    graella.style.marginTop = "10px";
     d.append(graella);
     camps.forEach(c => {
       const w = document.createElement("div");
@@ -718,6 +735,7 @@ function pintaGrups(){
                             { opcions: [...opc, v.trim()] });
         }
       });
+      if (ctrl.ample) w.style.gridColumn = "1 / -1";
       w.append(ctrl.el); graella.append(w);
     });
     if (!camps.length) d.insertAdjacentHTML("beforeend",
@@ -964,15 +982,18 @@ function renderCampsPlantilla(){
         <div class="camp"><label>Tipus</label>
           <select class="js-tipus">
             <option value="text">Text lliure</option>
+            <option value="llarg">Text llarg (diverses línies)</option>
             <option value="llista">Llista d'opcions</option>
+            <option value="multiple">Llista d'opcions (en pots triar diverses)</option>
           </select></div>
         <div class="camp js-capsa-opcions"><label>Opcions (una per línia)</label>
           <textarea class="js-opcions" style="min-height:80px">${
             esc((cfg.opcions||[]).join("\n"))}</textarea></div>`;
       const selT = w.querySelector(".js-tipus");
-      selT.value = cfg.tipus === "llista" ? "llista" : "text";
+      selT.value = ["llarg","llista","multiple"].includes(cfg.tipus) ? cfg.tipus : "text";
       const capsa = w.querySelector(".js-capsa-opcions");
-      const sync = () => capsa.classList.toggle("oculta", selT.value !== "llista");
+      const sync = () => capsa.classList.toggle("oculta",
+        !["llista","multiple"].includes(selT.value));
       selT.onchange = sync; sync();
       d.append(w);
     }
@@ -1254,6 +1275,7 @@ function iniciarGeneracio(p){
       def.delGrup ? "" : ' <span class="muted">· camp d\'aquesta plantilla</span>'}</label>`;
     const inicial = def.delGrup && grup && grup.valors ? (grup.valors[def.clau] || "") : "";
     const ctrl = controlValor(def, inicial);
+    if (ctrl.ample) w.style.gridColumn = "1 / -1";
     controls.push({ clau, def, ctrl });
     w.append(ctrl.el); cont.append(w);
   });
