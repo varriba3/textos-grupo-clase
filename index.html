@@ -55,6 +55,14 @@
        background:#fff;font-size:13px;cursor:pointer}
   .xip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);
        color:var(--accent);font-weight:600}
+  .xip-color{display:inline-flex;align-items:center;gap:6px}
+  .punt{width:12px;height:12px;border-radius:50%;display:inline-block;flex:none}
+  .mostra{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+  .mostra[aria-pressed="true"]{border-color:var(--text);box-shadow:0 0 0 2px #fff inset}
+  .bot-plantilla{display:flex;gap:10px;align-items:flex-start;border-left-width:6px}
+  .bot-plantilla img{width:34px;height:34px;object-fit:contain;flex:none}
+  .bot-plantilla .emoji{font-size:26px;line-height:1;flex:none}
+  .bot-plantilla .desc{font-size:12px;color:var(--muted);display:block;margin-top:2px}
   code{background:#eef1f5;padding:1px 5px;border-radius:4px;font-size:13px}
 </style>
 </head>
@@ -79,6 +87,7 @@
       <button data-tab="grups" role="tab" aria-selected="false">Grups classe</button>
       <button data-tab="camps" role="tab" aria-selected="false">Camps</button>
       <button data-tab="plantilles" role="tab" aria-selected="false">Plantilles</button>
+      <button data-tab="icones" role="tab" aria-selected="false">Icones</button>
     </div>
 
     <!-- GENERAR -->
@@ -97,6 +106,8 @@
         </div>
         <label style="margin-top:10px">Filtra per categories</label>
         <div id="filtreCategories" class="xips"></div>
+        <label style="margin-top:10px">Filtra per color</label>
+        <div id="filtreColors" class="xips"></div>
         <div class="row" style="margin-top:10px">
           <button id="btnNetejaFiltres">Neteja els filtres</button>
           <span id="comptador" class="muted"></span>
@@ -143,6 +154,18 @@
         </div>
       </div>
       <div id="llistaPlantilles"></div>
+    </section>
+
+    <!-- ICONES -->
+    <section id="tab-icones" class="oculta">
+      <div class="panel">
+        <p class="muted">Puja aquí els logos que faràs servir. Es desen una sola vegada
+          i després els pots assignar a totes les plantilles que vulguis.</p>
+        <div class="row">
+          <input id="pujaIcones" type="file" accept="image/*" multiple>
+        </div>
+      </div>
+      <div id="llistaIcones" class="grid"></div>
     </section>
   </div>
 </main>
@@ -194,6 +217,20 @@
     <h2 style="margin-top:0;font-size:17px">Edita la plantilla</h2>
     <div class="camp"><label>Títol</label><input id="edTitol"></div>
     <div class="camp"><label>Categories (separades per comes)</label><input id="edCateg"></div>
+    <div class="camp"><label>Descripció breu (es veurà al botó)</label><input id="edDesc"></div>
+    <div class="camp"><label>Color</label><div id="edColors" class="xips"></div></div>
+    <div class="camp"><label>Icona</label>
+      <div class="row">
+        <input id="edEmoji" style="max-width:90px" placeholder="😀" maxlength="4">
+        <span class="muted">o un logo de la biblioteca:</span>
+      </div>
+      <div id="edIcones" class="xips" style="margin-top:8px"></div>
+      <p class="muted">Els logos es pugen una sola vegada a la pestanya «Icones»
+        i des d'aquí només se'n tria un.</p>
+      <img id="edPreview" alt="" class="oculta"
+           style="width:40px;height:40px;object-fit:contain">
+      <button id="btnTreuImatge" type="button" class="oculta">Treu la imatge pròpia</button>
+    </div>
     <div class="camp"><label>Text</label><textarea id="edCos" style="min-height:220px"></textarea></div>
     <p class="muted">Insereix un camp del grup classe al punt on tinguis el cursor:</p>
     <div id="edCampsDisp"></div>
@@ -239,7 +276,8 @@ const db = getFirestore(app);
 let uid = null;
 let camps = [];       // [{id, etiqueta, clau}]
 let grups = [];       // [{id, nom, valors:{clau:valor}}]
-let plantilles = [];  // [{id, titol, categoria, cos}]
+let plantilles = [];  // [{id, titol, categories, cos, color, emoji, iconaId}]
+let icones = [];      // [{id, nom, dades}]
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
@@ -298,6 +336,11 @@ function escoltarDades(){
       plantilles = s.docs.map(d => ({ id:d.id, ...d.data() }))
         .sort((a,b)=> (a.titol||"").localeCompare(b.titol||""));
       pintaPlantilles(); pintaBotons();
+    }),
+    onSnapshot(col("icones"), s => {
+      icones = s.docs.map(d => ({ id:d.id, ...d.data() }))
+                     .sort((a,b)=> (a.nom||"").localeCompare(b.nom||""));
+      pintaIcones(); pintaSelectorIcona(); pintaPlantilles(); pintaBotons();
     })
   ];
 }
@@ -306,7 +349,7 @@ function escoltarDades(){
 document.querySelectorAll(".tabs button").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x===b));
-    ["generar","grups","camps","plantilles"].forEach(t =>
+    ["generar","grups","camps","plantilles","icones"].forEach(t =>
       $("#tab-"+t).classList.toggle("oculta", t !== b.dataset.tab));
   };
 });
@@ -501,6 +544,21 @@ function pintaSelectorGrup(){
 
 /* ---------- Plantilles ---------- */
 
+/* Paleta fixa de colors */
+const COLORS = [
+  { id:"cap",      nom:"Sense color", hex:"#c8ced6" },
+  { id:"blau",     nom:"Blau",        hex:"#2f6fed" },
+  { id:"verd",     nom:"Verd",        hex:"#2e9e5b" },
+  { id:"turquesa", nom:"Turquesa",    hex:"#128f8f" },
+  { id:"lila",     nom:"Lila",        hex:"#7b4fd1" },
+  { id:"rosa",     nom:"Rosa",        hex:"#c2409a" },
+  { id:"vermell",  nom:"Vermell",     hex:"#c0392b" },
+  { id:"taronja",  nom:"Taronja",     hex:"#d97518" },
+  { id:"ocre",     nom:"Ocre",        hex:"#9a8419" },
+  { id:"gris",     nom:"Gris",        hex:"#65707d" }
+];
+const colorDe = id => COLORS.find(c => c.id === id) || COLORS[0];
+
 /* Categories d'una plantilla (accepta el format antic d'una sola categoria) */
 const catsDe = p => Array.isArray(p.categories) ? p.categories
   : (p.categoria ? String(p.categoria).split(",").map(s=>s.trim()).filter(Boolean) : []);
@@ -521,8 +579,13 @@ function pintaPlantilles(){
   plantilles.forEach(p => {
     const d = document.createElement("div");
     d.className = "llista-item";
-    d.innerHTML = `<h3>${esc(p.titol)}</h3>
-      <p class="muted">${esc(catsDe(p).join(" · ") || "Sense categoria")}</p>`;
+    d.innerHTML = `<h3><span class="punt" style="background:${colorDe(p.color).hex}"></span>
+        ${p.emoji ? esc(p.emoji)+" " : ""}${esc(p.titol)}</h3>
+      <p class="muted">${esc(catsDe(p).join(" · ") || "Sense categoria")}${
+        p.descripcio ? " — " + esc(p.descripcio) : ""}</p>`;
+    const src = iconaSrc(p);
+    if (src) d.querySelector("h3").insertAdjacentHTML("afterend",
+      `<img src="${src}" alt="" style="width:34px;height:34px;object-fit:contain">`);
     const b1 = document.createElement("button"); b1.textContent = "Edita";
     b1.onclick = () => obrirEdicio(p);
     const b2 = document.createElement("button"); b2.className="danger"; b2.textContent="Elimina";
@@ -554,6 +617,128 @@ $("#btnBlocOpcional").onclick = () => {
 };
 
 let plantillaEnEdicio = null;
+let colorTriat = "cap";
+let iconaActual = "";
+
+function pintaSelectorColor(){
+  const cont = $("#edColors");
+  cont.innerHTML = "";
+  COLORS.forEach(c => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "mostra";
+    b.style.background = c.hex; b.title = c.nom;
+    b.setAttribute("aria-pressed", c.id === colorTriat);
+    b.onclick = () => { colorTriat = c.id; pintaSelectorColor(); };
+    cont.append(b);
+  });
+}
+
+/* Redueix la imatge abans de desar-la, perquè ocupi poc */
+function redueixImatge(file, max = 96){
+  return new Promise((resol, rebutja) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const f = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * f));
+      c.height = Math.max(1, Math.round(img.height * f));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      let dades = c.toDataURL("image/png");
+      if (dades.length > 200000) dades = c.toDataURL("image/jpeg", 0.85);
+      resol(dades);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rebutja(); };
+    img.src = url;
+  });
+}
+
+function pintaPreviewIcona(){
+  const img = $("#edPreview");
+  img.src = iconaActual || "";
+  img.classList.toggle("oculta", !iconaActual);
+  $("#btnTreuImatge").classList.toggle("oculta", !iconaActual);
+}
+
+$("#btnTreuImatge").onclick = () => { iconaActual = ""; pintaPreviewIcona(); };
+
+/* ---------- Biblioteca d'icones ---------- */
+let iconaTriada = "";
+
+// La imatge que toca mostrar: la de la biblioteca o, si és antiga, la incrustada
+const iconaSrc = p => {
+  if (p.iconaId){ const i = icones.find(x => x.id === p.iconaId); return i ? i.dades : ""; }
+  return p.icona || "";
+};
+
+$("#pujaIcones").onchange = async e => {
+  const fitxers = [...e.target.files];
+  e.target.value = "";
+  for (const f of fitxers){
+    try {
+      const dades = await redueixImatge(f, 160);
+      if (dades.length > 500000){ avis(`«${f.name}» és massa gran.`); continue; }
+      await addDoc(col("icones"), { nom: f.name.replace(/\.[^.]+$/,""), dades });
+    } catch(_){ avis(`No s'ha pogut llegir «${f.name}».`); }
+  }
+  avis("Icones desades.");
+};
+
+function pintaIcones(){
+  const cont = $("#llistaIcones");
+  cont.innerHTML = icones.length ? "" :
+    '<p class="muted">Encara no has pujat cap icona.</p>';
+  icones.forEach(ic => {
+    const usos = plantilles.filter(p => p.iconaId === ic.id).length;
+    const d = document.createElement("div");
+    d.className = "llista-item";
+    d.style.textAlign = "center";
+    d.innerHTML = `<img src="${ic.dades}" alt="" style="height:60px;object-fit:contain">`;
+    const nom = document.createElement("input");
+    nom.value = ic.nom || "";
+    nom.style.marginTop = "6px";
+    nom.onchange = async () => {
+      await updateDoc(doc(db,"users",uid,"icones",ic.id), { nom: nom.value.trim() });
+      avis("Desat.");
+    };
+    d.append(nom);
+    d.insertAdjacentHTML("beforeend",
+      `<p class="muted">${usos} plantill${usos===1?"a":"es"}</p>`);
+    const bDel = document.createElement("button");
+    bDel.className = "danger"; bDel.textContent = "Elimina";
+    bDel.onclick = async () => {
+      if (usos && !confirm(`Aquesta icona s'utilitza a ${usos} plantilles. L'elimines igualment?`)) return;
+      if (!usos && !confirm("Vols eliminar aquesta icona?")) return;
+      await deleteDoc(doc(db,"users",uid,"icones",ic.id));
+    };
+    d.append(bDel);
+    cont.append(d);
+  });
+}
+
+function pintaSelectorIcona(){
+  const cont = $("#edIcones");
+  if (!cont) return;
+  cont.innerHTML = "";
+  const cap = document.createElement("button");
+  cap.type = "button"; cap.className = "xip";
+  cap.textContent = "Cap icona";
+  cap.setAttribute("aria-pressed", !iconaTriada);
+  cap.onclick = () => { iconaTriada = ""; pintaSelectorIcona(); };
+  cont.append(cap);
+  icones.forEach(ic => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "xip xip-color";
+    b.title = ic.nom || "";
+    b.innerHTML = `<img src="${ic.dades}" alt="" style="height:22px;object-fit:contain">
+                   ${esc(ic.nom||"")}`;
+    b.setAttribute("aria-pressed", iconaTriada === ic.id);
+    b.onclick = () => { iconaTriada = ic.id; iconaActual = ""; pintaSelectorIcona(); pintaPreviewIcona(); };
+    cont.append(b);
+  });
+  if (!icones.length) cont.insertAdjacentHTML("beforeend",
+    '<span class="muted">Puja logos a la pestanya «Icones».</span>');
+}
 
 /* Configuració dels camps propis de cada plantilla */
 function renderCampsPlantilla(){
@@ -631,6 +816,12 @@ function obrirEdicio(p){
   plantillaEnEdicio = p;
   $("#edTitol").value = p.titol || "";
   $("#edCateg").value = catsDe(p).join(", ");
+  $("#edDesc").value = p.descripcio || "";
+  $("#edEmoji").value = p.emoji || "";
+  colorTriat = COLORS.some(c=>c.id===p.color) ? p.color : "cap";
+  iconaActual = p.icona || "";
+  iconaTriada = p.iconaId || "";
+  pintaSelectorColor(); pintaSelectorIcona(); pintaPreviewIcona();
   $("#edCos").value = p.cos || "";
   $("#edCampsPlantilla").innerHTML = "";
   renderCampsPlantilla();
@@ -641,6 +832,11 @@ $("#btnDesarPlantilla").onclick = async () => {
   await setDoc(doc(db,"users",uid,"plantilles",plantillaEnEdicio.id), {
     titol: $("#edTitol").value.trim(),
     categories: catsDeText($("#edCateg").value),
+    descripcio: $("#edDesc").value.trim(),
+    color: colorTriat,
+    emoji: $("#edEmoji").value.trim(),
+    iconaId: iconaTriada,
+    icona: iconaTriada ? "" : iconaActual,
     cos: $("#edCos").value,
     campsPropis: llegirCampsPlantilla()
   });
@@ -650,13 +846,32 @@ $("#btnDesarPlantilla").onclick = async () => {
 
 /* ---------- Generar ---------- */
 const categoriesTriades = new Set();
+const colorsTriats = new Set();
 
 $("#cercaPlantilla").oninput = pintaBotons;
 $("#btnNetejaFiltres").onclick = () => {
-  categoriesTriades.clear();
+  categoriesTriades.clear(); colorsTriats.clear();
   $("#cercaPlantilla").value = "";
   pintaBotons();
 };
+
+function pintaFiltreColors(){
+  const usats = COLORS.filter(c => plantilles.some(p => (p.color||"cap") === c.id));
+  const cont = $("#filtreColors");
+  cont.innerHTML = usats.length ? "" :
+    '<span class="muted">Encara no has assignat colors.</span>';
+  usats.forEach(c => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "xip xip-color";
+    b.innerHTML = `<span class="punt" style="background:${c.hex}"></span>${esc(c.nom)}`;
+    b.setAttribute("aria-pressed", colorsTriats.has(c.id));
+    b.onclick = () => {
+      colorsTriats.has(c.id) ? colorsTriats.delete(c.id) : colorsTriats.add(c.id);
+      pintaBotons();
+    };
+    cont.append(b);
+  });
+}
 
 function pintaBotons(){
   // paraules de cerca: totes s'han de complir alhora
@@ -682,12 +897,15 @@ function pintaBotons(){
   });
   [...categoriesTriades].forEach(c => { if (!totes.includes(c)) categoriesTriades.delete(c); });
 
+  pintaFiltreColors();
+
   const llista = plantilles.filter(p => {
     const cats = catsDe(p);
     const totCat = [...categoriesTriades].every(c => cats.includes(c));
-    const text = normalitza(p.titol + " " + cats.join(" "));
+    const colOk = !colorsTriats.size || colorsTriats.has(p.color || "cap");
+    const text = normalitza(p.titol + " " + cats.join(" ") + " " + (p.descripcio||""));
     const totText = paraules.every(w => text.includes(w));
-    return totCat && totText;
+    return totCat && colOk && totText;
   });
 
   $("#comptador").textContent = `${llista.length} de ${plantilles.length} plantilles`;
@@ -698,9 +916,17 @@ function pintaBotons(){
     cont.innerHTML = '<p class="muted">Cap plantilla amb aquests filtres.</p>'; return;
   }
   llista.forEach(p => {
+    const c = colorDe(p.color);
     const b = document.createElement("button");
-    b.innerHTML = `<strong>${esc(p.titol)}</strong><br>
-      <span class="muted">${esc(catsDe(p).join(" · "))}</span>`;
+    b.className = "bot-plantilla";
+    b.style.borderLeftColor = c.hex;
+    b.style.background = c.id === "cap" ? "#fff" : c.hex + "14";
+    const src = iconaSrc(p);
+    const icona = src ? `<img src="${src}" alt="">`
+                : (p.emoji ? `<span class="emoji">${esc(p.emoji)}</span>` : "");
+    b.innerHTML = `${icona}<span><strong>${esc(p.titol)}</strong>
+      ${p.descripcio ? `<span class="desc">${esc(p.descripcio)}</span>` : ""}
+      <span class="desc">${esc(catsDe(p).join(" · "))}</span></span>`;
     b.onclick = () => iniciarGeneracio(p);
     cont.append(b);
   });
@@ -776,7 +1002,7 @@ function iniciarGeneracio(p){
     return g ? camps.indexOf(g) : 1000 + original.indexOf(clau);
   };
   const claus = original.slice().sort((a,b) => posicio(a) - posicio(b));
-  $("#dlgTitol").textContent = p.titol;
+  $("#dlgTitol").textContent = (p.emoji ? p.emoji + " " : "") + p.titol;
   const cont = $("#dlgCamps");
   cont.className = "cols2";
   cont.innerHTML = claus.length ? "" :
