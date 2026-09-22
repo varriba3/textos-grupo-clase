@@ -48,6 +48,13 @@
         opacity:0;transition:opacity .2s;pointer-events:none}
   #avis.visible{opacity:1}
   .oculta{display:none !important}
+  .cols2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+         gap:0 18px;align-items:start}
+  .xips{display:flex;flex-wrap:wrap;gap:6px}
+  .xip{padding:3px 10px;border-radius:999px;border:1px solid var(--line);
+       background:#fff;font-size:13px;cursor:pointer}
+  .xip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);
+       color:var(--accent);font-weight:600}
   code{background:#eef1f5;padding:1px 5px;border-radius:4px;font-size:13px}
 </style>
 </head>
@@ -84,8 +91,15 @@
           </div>
           <div style="flex:1">
             <label for="cercaPlantilla">Cerca una plantilla</label>
-            <input id="cercaPlantilla" type="search" placeholder="Escriu per filtrar…">
+            <input id="cercaPlantilla" type="search"
+                   placeholder="Escriu diverses paraules: es filtra per totes alhora">
           </div>
+        </div>
+        <label style="margin-top:10px">Filtra per categories</label>
+        <div id="filtreCategories" class="xips"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="btnNetejaFiltres">Neteja els filtres</button>
+          <span id="comptador" class="muted"></span>
         </div>
       </div>
       <div class="panel">
@@ -124,7 +138,7 @@
       <div class="panel">
         <div class="row">
           <input id="novaPlantillaTitol" placeholder="Títol de la plantilla (el text del botó)">
-          <input id="novaPlantillaCateg" placeholder="Categoria (opcional)">
+          <input id="novaPlantillaCateg" placeholder="Categories separades per comes (opcional)">
           <button class="primary" id="btnAfegirPlantilla">Afegeix plantilla</button>
         </div>
       </div>
@@ -179,7 +193,7 @@
   <div class="dlg-cos">
     <h2 style="margin-top:0;font-size:17px">Edita la plantilla</h2>
     <div class="camp"><label>Títol</label><input id="edTitol"></div>
-    <div class="camp"><label>Categoria</label><input id="edCateg"></div>
+    <div class="camp"><label>Categories (separades per comes)</label><input id="edCateg"></div>
     <div class="camp"><label>Text</label><textarea id="edCos" style="min-height:220px"></textarea></div>
     <p class="muted">Insereix un camp del grup classe al punt on tinguis el cursor:</p>
     <div id="edCampsDisp"></div>
@@ -271,7 +285,8 @@ function escoltarDades(){
   deixarEscoltar = [
     onSnapshot(col("camps"), s => {
       camps = s.docs.map(d => ({ id:d.id, ...d.data() }))
-                    .sort((a,b)=> (a.etiqueta||"").localeCompare(b.etiqueta||""));
+        .sort((a,b)=> (a.ordre ?? 9999) - (b.ordre ?? 9999)
+                   || (a.etiqueta||"").localeCompare(b.etiqueta||""));
       pintaCamps(); pintaGrups(); pintaBotons();
     }),
     onSnapshot(col("grups"), s => {
@@ -281,7 +296,7 @@ function escoltarDades(){
     }),
     onSnapshot(col("plantilles"), s => {
       plantilles = s.docs.map(d => ({ id:d.id, ...d.data() }))
-        .sort((a,b)=> ((a.categoria||"")+(a.titol||"")).localeCompare((b.categoria||"")+(b.titol||"")));
+        .sort((a,b)=> (a.titol||"").localeCompare(b.titol||""));
       pintaPlantilles(); pintaBotons();
     })
   ];
@@ -304,7 +319,7 @@ $("#btnAfegirCamp").onclick = async () => {
   if (!clau) clau = etiqueta.toLowerCase().normalize("NFD")
       .replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
   if (camps.some(c => c.clau === clau)) return avis("Ja existeix un camp amb aquesta clau.");
-  await addDoc(col("camps"), { etiqueta, clau, tipus:"text", opcions:[] });
+  await addDoc(col("camps"), { etiqueta, clau, tipus:"text", opcions:[], ordre: camps.length });
   $("#nouCampEtiqueta").value = ""; $("#nouCampClau").value = "";
 };
 
@@ -342,15 +357,36 @@ function controlValor(def, valor, onCanvi){
   return { el: wrap, llegir };
 }
 
+/* Canvia de posició un camp i renumera l'ordre de tots */
+async function moureCamp(i, dir){
+  const j = i + dir;
+  if (j < 0 || j >= camps.length) return;
+  const nou = camps.slice();
+  [nou[i], nou[j]] = [nou[j], nou[i]];
+  await Promise.all(nou.map((c,k) =>
+    updateDoc(doc(db,"users",uid,"camps",c.id), { ordre: k })));
+}
+
 function pintaCamps(){
   $("#llistaCamps").innerHTML = camps.length ? "" :
     '<p class="muted">Encara no hi ha cap camp.</p>';
-  camps.forEach(c => {
+  camps.forEach((c, i) => {
     const opcions = Array.isArray(c.opcions) ? c.opcions : [];
     const d = document.createElement("div");
     d.className = "llista-item";
-    d.innerHTML = `<h3>${esc(c.etiqueta)}</h3>
+    d.innerHTML = `<h3>${i+1}. ${esc(c.etiqueta)}</h3>
       <p class="muted">A les plantilles: <code>{{${esc(c.clau)}}}</code></p>`;
+
+    const mou = document.createElement("div");
+    mou.className = "row";
+    const bUp = document.createElement("button");
+    bUp.textContent = "▲ Puja"; bUp.disabled = i === 0;
+    bUp.onclick = () => moureCamp(i, -1);
+    const bDown = document.createElement("button");
+    bDown.textContent = "▼ Baixa"; bDown.disabled = i === camps.length - 1;
+    bDown.onclick = () => moureCamp(i, 1);
+    mou.append(bUp, bDown);
+    d.append(mou);
 
     const fila = document.createElement("div");
     fila.className = "row";
@@ -430,6 +466,9 @@ function pintaGrups(){
     const d = document.createElement("div");
     d.className = "llista-item";
     d.innerHTML = `<h3>${esc(g.nom)}</h3>`;
+    const graella = document.createElement("div");
+    graella.className = "cols2";
+    d.append(graella);
     camps.forEach(c => {
       const w = document.createElement("div");
       w.className = "camp";
@@ -438,7 +477,7 @@ function pintaGrups(){
         await updateDoc(doc(db,"users",uid,"grups",g.id), { ["valors."+c.clau]: v });
         avis("Desat.");
       });
-      w.append(ctrl.el); d.append(w);
+      w.append(ctrl.el); graella.append(w);
     });
     if (!camps.length) d.insertAdjacentHTML("beforeend",
       '<p class="muted">Afegeix camps a la pestanya «Camps» per omplir-los aquí.</p>');
@@ -461,13 +500,19 @@ function pintaSelectorGrup(){
 }
 
 /* ---------- Plantilles ---------- */
+
+/* Categories d'una plantilla (accepta el format antic d'una sola categoria) */
+const catsDe = p => Array.isArray(p.categories) ? p.categories
+  : (p.categoria ? String(p.categoria).split(",").map(s=>s.trim()).filter(Boolean) : []);
+const catsDeText = t => [...new Set(String(t||"").split(",").map(s=>s.trim()).filter(Boolean))];
+
 $("#btnAfegirPlantilla").onclick = async () => {
   const titol = $("#novaPlantillaTitol").value.trim();
   if (!titol) return avis("Escriu un títol.");
-  const categoria = $("#novaPlantillaCateg").value.trim();
-  const ref = await addDoc(col("plantilles"), { titol, categoria, cos:"" });
+  const categories = catsDeText($("#novaPlantillaCateg").value);
+  const ref = await addDoc(col("plantilles"), { titol, categories, cos:"" });
   $("#novaPlantillaTitol").value = "";
-  setTimeout(()=>obrirEdicio({ id:ref.id, titol, categoria, cos:"" }), 300);
+  setTimeout(()=>obrirEdicio({ id:ref.id, titol, categories, cos:"" }), 300);
 };
 
 function pintaPlantilles(){
@@ -477,7 +522,7 @@ function pintaPlantilles(){
     const d = document.createElement("div");
     d.className = "llista-item";
     d.innerHTML = `<h3>${esc(p.titol)}</h3>
-      <p class="muted">${esc(p.categoria||"Sense categoria")}</p>`;
+      <p class="muted">${esc(catsDe(p).join(" · ") || "Sense categoria")}</p>`;
     const b1 = document.createElement("button"); b1.textContent = "Edita";
     b1.onclick = () => obrirEdicio(p);
     const b2 = document.createElement("button"); b2.className="danger"; b2.textContent="Elimina";
@@ -585,7 +630,7 @@ $("#edCos").addEventListener("input", () => {
 function obrirEdicio(p){
   plantillaEnEdicio = p;
   $("#edTitol").value = p.titol || "";
-  $("#edCateg").value = p.categoria || "";
+  $("#edCateg").value = catsDe(p).join(", ");
   $("#edCos").value = p.cos || "";
   $("#edCampsPlantilla").innerHTML = "";
   renderCampsPlantilla();
@@ -595,7 +640,7 @@ $("#btnCancelPlantilla").onclick = () => $("#dlgPlantilla").close();
 $("#btnDesarPlantilla").onclick = async () => {
   await setDoc(doc(db,"users",uid,"plantilles",plantillaEnEdicio.id), {
     titol: $("#edTitol").value.trim(),
-    categoria: $("#edCateg").value.trim(),
+    categories: catsDeText($("#edCateg").value),
     cos: $("#edCos").value,
     campsPropis: llegirCampsPlantilla()
   });
@@ -604,20 +649,58 @@ $("#btnDesarPlantilla").onclick = async () => {
 };
 
 /* ---------- Generar ---------- */
+const categoriesTriades = new Set();
+
 $("#cercaPlantilla").oninput = pintaBotons;
+$("#btnNetejaFiltres").onclick = () => {
+  categoriesTriades.clear();
+  $("#cercaPlantilla").value = "";
+  pintaBotons();
+};
 
 function pintaBotons(){
-  const q = $("#cercaPlantilla").value.trim().toLowerCase();
+  // paraules de cerca: totes s'han de complir alhora
+  const paraules = normalitza($("#cercaPlantilla").value) ?
+    $("#cercaPlantilla").value.trim().split(/\s+/).map(normalitza).filter(Boolean) : [];
+
+  // xips de categories
+  const totes = [...new Set(plantilles.flatMap(catsDe))]
+    .sort((a,b)=>a.localeCompare(b));
+  const xips = $("#filtreCategories");
+  xips.innerHTML = totes.length ? "" :
+    '<span class="muted">Encara no has posat categories a cap plantilla.</span>';
+  totes.forEach(cat => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "xip";
+    b.textContent = cat;
+    b.setAttribute("aria-pressed", categoriesTriades.has(cat));
+    b.onclick = () => {
+      categoriesTriades.has(cat) ? categoriesTriades.delete(cat) : categoriesTriades.add(cat);
+      pintaBotons();
+    };
+    xips.append(b);
+  });
+  [...categoriesTriades].forEach(c => { if (!totes.includes(c)) categoriesTriades.delete(c); });
+
+  const llista = plantilles.filter(p => {
+    const cats = catsDe(p);
+    const totCat = [...categoriesTriades].every(c => cats.includes(c));
+    const text = normalitza(p.titol + " " + cats.join(" "));
+    const totText = paraules.every(w => text.includes(w));
+    return totCat && totText;
+  });
+
+  $("#comptador").textContent = `${llista.length} de ${plantilles.length} plantilles`;
+
   const cont = $("#botonsPlantilles");
   cont.innerHTML = "";
-  const llista = plantilles.filter(p =>
-    !q || (p.titol+" "+(p.categoria||"")).toLowerCase().includes(q));
   if (!llista.length){
-    cont.innerHTML = '<p class="muted">Cap plantilla per mostrar.</p>'; return;
+    cont.innerHTML = '<p class="muted">Cap plantilla amb aquests filtres.</p>'; return;
   }
   llista.forEach(p => {
     const b = document.createElement("button");
-    b.innerHTML = `<strong>${esc(p.titol)}</strong><br><span class="muted">${esc(p.categoria||"")}</span>`;
+    b.innerHTML = `<strong>${esc(p.titol)}</strong><br>
+      <span class="muted">${esc(catsDe(p).join(" · "))}</span>`;
     b.onclick = () => iniciarGeneracio(p);
     cont.append(b);
   });
@@ -685,9 +768,17 @@ function netejaText(t){
 
 function iniciarGeneracio(p){
   const grup = grups.find(g => g.id === $("#selGrup").value);
-  const claus = clausDe(p.cos);
+  // primer els camps del grup classe, en l'ordre de la pestanya «Camps»;
+  // després els camps propis de la plantilla, en l'ordre en què surten al text
+  const original = clausDe(p.cos);
+  const posicio = clau => {
+    const g = campDe(clau);
+    return g ? camps.indexOf(g) : 1000 + original.indexOf(clau);
+  };
+  const claus = original.slice().sort((a,b) => posicio(a) - posicio(b));
   $("#dlgTitol").textContent = p.titol;
   const cont = $("#dlgCamps");
+  cont.className = "cols2";
   cont.innerHTML = claus.length ? "" :
     '<p class="muted">Aquesta plantilla no té cap camp per completar.</p>';
   const controls = [];
