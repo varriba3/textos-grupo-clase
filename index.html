@@ -189,17 +189,20 @@
 <dialog id="dlgResultat">
   <div class="dlg-cos">
     <h2 style="margin-top:0;font-size:17px">Text generat</h2>
-    <textarea id="textResultat" style="min-height:260px"></textarea>
-    <p class="muted">S'ha copiat automàticament al porta-retalls.</p>
     <div id="zonaInstruccions" class="oculta"
          style="border-left:4px solid var(--accent);background:var(--accent-soft);
-                border-radius:8px;padding:10px 14px;margin-top:12px">
-      <strong>Instruccions</strong>
+                border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+        <strong>Instruccions</strong>
+        <button id="btnCopiarInstruccions" type="button"
+                style="padding:4px 10px;font-size:13px">Copia les instruccions</button>
+      </div>
       <div id="textInstruccions" style="white-space:pre-wrap;margin-top:6px"></div>
     </div>
+    <textarea id="textResultat" style="min-height:260px"></textarea>
+    <p class="muted">S'ha copiat automàticament al porta-retalls.</p>
   </div>
   <div class="dlg-peu">
-    <button id="btnCopiarInstruccions" class="oculta">Copia les instruccions</button>
     <button id="btnCopiarDeNou">Torna a copiar</button>
     <button id="btnTancarResultat" class="primary">Tanca</button>
   </div>
@@ -211,10 +214,40 @@
     <h2 id="opcTitol" style="margin-top:0;font-size:17px"></h2>
     <p class="muted">Escriu una opció per línia. Seran les respostes disponibles a la llista.</p>
     <textarea id="opcText" style="min-height:200px" placeholder="Noi&#10;Noia&#10;L'alumne/a"></textarea>
+    <div class="camp oculta" id="opcCapsaFormat" style="margin-top:10px">
+      <label>Com s'escriuen al text quan se'n trien diverses</label>
+      <select id="opcFormat">
+        <option value="i">A, B i C</option>
+        <option value="comes">A, B, C</option>
+        <option value="linies">Una per línia</option>
+        <option value="guions">Una per línia, amb guió</option>
+      </select>
+    </div>
   </div>
   <div class="dlg-peu">
     <button id="btnCancelOpcions">Cancel·la</button>
     <button id="btnDesarOpcions" class="primary">Desa</button>
+  </div>
+</dialog>
+
+<!-- Diàleg: configuració d'un camp de fitxes -->
+<dialog id="dlgFitxes">
+  <div class="dlg-cos">
+    <h2 id="fitTitol" style="margin-top:0;font-size:17px"></h2>
+    <div class="camp">
+      <label>Subcamps de cada fitxa (un per línia)</label>
+      <textarea id="fitSubcamps" style="min-height:110px"
+                placeholder="Nom&#10;Necessitats"></textarea>
+    </div>
+    <div class="camp">
+      <label>Com s'escriu cada fitxa quan s'insereix la llista sencera</label>
+      <input id="fitFormat" placeholder="- {{nom}}: {{necessitats}}">
+      <p class="muted" id="fitClaus"></p>
+    </div>
+  </div>
+  <div class="dlg-peu">
+    <button id="btnCancelFitxes">Cancel·la</button>
+    <button id="btnDesarFitxes" class="primary">Desa</button>
   </div>
 </dialog>
 
@@ -376,8 +409,45 @@ $("#btnAfegirCamp").onclick = async () => {
   $("#nouCampEtiqueta").value = ""; $("#nouCampClau").value = "";
 };
 
+/* Uneix els valors triats en un camp de selecció múltiple */
+function uneix(arr, format){
+  const v = (arr||[]).filter(Boolean);
+  if (!v.length) return "";
+  switch (format){
+    case "comes":  return v.join(", ");
+    case "linies": return v.join("\n");
+    case "guions": return v.map(x => "- " + x).join("\n");
+    default:       return v.length === 1 ? v[0]
+                     : v.slice(0,-1).join(", ") + " i " + v[v.length-1];
+  }
+}
+
 /* Control d'entrada: casella de text o llista desplegable segons el tipus de camp */
 function controlValor(def, valor, onCanvi){
+  if (def && def.tipus === "multiple"){
+    const opcions = (def.opcions || []).filter(Boolean);
+    const triats = Array.isArray(valor) ? valor.slice()
+                 : (valor ? String(valor).split(/\s*,\s*| i /).filter(Boolean) : []);
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px";
+    if (!opcions.length) wrap.innerHTML = '<span class="muted">Aquest camp encara no té opcions.</span>';
+    const actuals = () => opcions.filter(o => triats.includes(o));
+    opcions.forEach(o => {
+      const lab = document.createElement("label");
+      lab.style.cssText = "display:flex;gap:6px;align-items:center;color:inherit;margin-bottom:2px";
+      const chk = document.createElement("input");
+      chk.type = "checkbox"; chk.style.width = "auto";
+      chk.checked = triats.includes(o);
+      chk.onchange = () => {
+        const i = triats.indexOf(o);
+        chk.checked ? (i < 0 && triats.push(o)) : (i >= 0 && triats.splice(i,1));
+        if (onCanvi) onCanvi(actuals());
+      };
+      lab.append(chk, document.createTextNode(o));
+      wrap.append(lab);
+    });
+    return { el: wrap, llegir: () => uneix(actuals(), def.formatLlista), llegirCru: actuals };
+  }
   const opcions = (def && def.tipus === "llista" && Array.isArray(def.opcions))
     ? def.opcions.filter(o => o !== "") : [];
   if (!opcions.length){
@@ -446,23 +516,35 @@ function pintaCamps(){
     const selTipus = document.createElement("select");
     selTipus.style.maxWidth = "220px";
     selTipus.innerHTML = '<option value="text">Text lliure</option>'
-                       + '<option value="llista">Llista d\'opcions</option>';
-    selTipus.value = c.tipus === "llista" ? "llista" : "text";
+                       + '<option value="llista">Llista d\'opcions</option>'
+                       + '<option value="multiple">Llista d\'opcions (en pots triar diverses)</option>'
+                       + '<option value="fitxes">Fitxes (diverses entrades amb subcamps)</option>';
+    selTipus.value = ["llista","multiple","fitxes"].includes(c.tipus) ? c.tipus : "text";
     selTipus.onchange = async () => {
       await updateDoc(doc(db,"users",uid,"camps",c.id), { tipus: selTipus.value });
       avis("Desat.");
     };
     fila.append(selTipus);
 
-    if (c.tipus === "llista"){
+    if (c.tipus === "llista" || c.tipus === "multiple"){
       const bOpc = document.createElement("button");
       bOpc.textContent = `Edita les opcions (${opcions.length})`;
       bOpc.onclick = () => obrirOpcions(c);
       fila.append(bOpc);
     }
+    if (c.tipus === "fitxes"){
+      const bF = document.createElement("button");
+      bF.textContent = `Configura les fitxes (${(c.subcamps||[]).length} subcamps)`;
+      bF.onclick = () => obrirFitxes(c);
+      fila.append(bF);
+    }
     d.append(fila);
 
-    if (c.tipus === "llista" && opcions.length)
+    if (c.tipus === "fitxes")
+      d.insertAdjacentHTML("beforeend",
+        `<p class="muted">Subcamps: ${(c.subcamps||[]).map(s=>esc(s.etiqueta)).join(" · ") || "cap"}</p>`);
+
+    if ((c.tipus === "llista" || c.tipus === "multiple") && opcions.length)
       d.insertAdjacentHTML("beforeend",
         `<p class="muted">Opcions: ${opcions.map(o=>esc(o)).join(" · ")}</p>`);
 
@@ -477,14 +559,21 @@ function pintaCamps(){
   });
   const disp = $("#edCampsDisp");
   disp.innerHTML = camps.length ? "" : "cap";
-  camps.forEach(c => {
+  const botoMarcador = (etiqueta, marcador) => {
     const b = document.createElement("button");
     b.type = "button";
     b.style.cssText = "padding:2px 8px;font-size:13px;margin:0 4px 4px 0";
-    b.textContent = c.etiqueta;
-    b.title = "{{" + c.clau + "}}";
-    b.onclick = () => inserirMarcador(c.clau);
+    b.textContent = etiqueta;
+    b.title = "{{" + marcador + "}}";
+    b.onclick = () => inserirMarcador(marcador);
     disp.append(b);
+  };
+  camps.forEach(c => {
+    if (c.tipus === "fitxes"){
+      botoMarcador(c.etiqueta + " (llista sencera)", c.clau);
+      (c.subcamps||[]).forEach(s =>
+        botoMarcador(c.etiqueta + " · " + s.etiqueta, c.clau + "." + s.clau));
+    } else botoMarcador(c.etiqueta, c.clau);
   });
 }
 
@@ -494,14 +583,49 @@ function obrirOpcions(c){
   campEnEdicio = c;
   $("#opcTitol").textContent = "Opcions de: " + c.etiqueta;
   $("#opcText").value = (Array.isArray(c.opcions) ? c.opcions : []).join("\n");
+  $("#opcCapsaFormat").classList.toggle("oculta", c.tipus !== "multiple");
+  $("#opcFormat").value = c.formatLlista || "i";
   $("#dlgOpcions").showModal();
 }
 $("#btnCancelOpcions").onclick = () => $("#dlgOpcions").close();
 $("#btnDesarOpcions").onclick = async () => {
   const opcions = $("#opcText").value.split("\n").map(s=>s.trim()).filter(Boolean);
-  await updateDoc(doc(db,"users",uid,"camps",campEnEdicio.id), { opcions, tipus:"llista" });
+  await updateDoc(doc(db,"users",uid,"camps",campEnEdicio.id),
+    { opcions, formatLlista: $("#opcFormat").value,
+      tipus: campEnEdicio.tipus === "multiple" ? "multiple" : "llista" });
   $("#dlgOpcions").close();
   avis("Opcions desades.");
+};
+
+/* Diàleg de configuració d'un camp de fitxes */
+let campFitxes = null;
+const aClau = s => String(s||"").toLowerCase().normalize("NFD")
+  .replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+
+function obrirFitxes(c){
+  campFitxes = c;
+  const subs = c.subcamps || [];
+  $("#fitTitol").textContent = "Fitxes de: " + c.etiqueta;
+  $("#fitSubcamps").value = subs.map(s=>s.etiqueta).join("\n") || "Nom\nNecessitats";
+  $("#fitFormat").value = c.formatLinia || "- {{nom}}: {{necessitats}}";
+  actualitzaClausFitxa();
+  $("#dlgFitxes").showModal();
+}
+function actualitzaClausFitxa(){
+  const claus = $("#fitSubcamps").value.split("\n").map(s=>s.trim()).filter(Boolean).map(aClau);
+  $("#fitClaus").innerHTML = "Pots fer servir: "
+    + (claus.map(k=>`<code>{{${esc(k)}}}</code>`).join(" ") || "cap");
+}
+$("#fitSubcamps").addEventListener("input", actualitzaClausFitxa);
+$("#btnCancelFitxes").onclick = () => $("#dlgFitxes").close();
+$("#btnDesarFitxes").onclick = async () => {
+  const subcamps = $("#fitSubcamps").value.split("\n").map(s=>s.trim()).filter(Boolean)
+                     .map(et => ({ etiqueta: et, clau: aClau(et) }));
+  if (!subcamps.length) return avis("Posa almenys un subcamp.");
+  await updateDoc(doc(db,"users",uid,"camps",campFitxes.id),
+    { subcamps, formatLinia: $("#fitFormat").value, tipus:"fitxes" });
+  $("#dlgFitxes").close();
+  avis("Fitxes configurades.");
 };
 
 /* ---------- Grups ---------- */
@@ -511,6 +635,54 @@ $("#btnAfegirGrup").onclick = async () => {
   await addDoc(col("grups"), { nom, valors:{} });
   $("#nouGrup").value = "";
 };
+
+/* Editor de les fitxes d'un camp dins d'un grup classe */
+function editorFitxes(c, g){
+  const subs = c.subcamps || [];
+  const llista = Array.isArray(g.valors && g.valors[c.clau])
+    ? g.valors[c.clau].map(x => ({...x})) : [];
+  const cont = document.createElement("div");
+
+  const desa = async () => {
+    await updateDoc(doc(db,"users",uid,"grups",g.id), { ["valors."+c.clau]: llista });
+    avis("Desat.");
+  };
+
+  const pinta = () => {
+    cont.innerHTML = "";
+    if (!subs.length){
+      cont.innerHTML = '<p class="muted">Configura primer els subcamps a la pestanya «Camps».</p>';
+      return;
+    }
+    llista.forEach((fitxa, idx) => {
+      const f = document.createElement("div");
+      f.className = "llista-item";
+      const graella = document.createElement("div");
+      graella.className = "cols2";
+      subs.forEach(s => {
+        const cw = document.createElement("div");
+        cw.className = "camp";
+        cw.innerHTML = `<label>${esc(s.etiqueta)}</label>`;
+        const inp = document.createElement("input");
+        inp.value = fitxa[s.clau] || "";
+        inp.onchange = () => { fitxa[s.clau] = inp.value; desa(); };
+        cw.append(inp); graella.append(cw);
+      });
+      f.append(graella);
+      const del = document.createElement("button");
+      del.className = "danger"; del.textContent = "Elimina la fitxa";
+      del.onclick = () => { llista.splice(idx,1); pinta(); desa(); };
+      f.append(del);
+      cont.append(f);
+    });
+    const add = document.createElement("button");
+    add.textContent = "+ Afegeix una fitxa";
+    add.onclick = () => { llista.push({}); pinta(); };
+    cont.append(add);
+  };
+  pinta();
+  return cont;
+}
 
 function pintaGrups(){
   const cont = $("#llistaGrups");
@@ -526,9 +698,25 @@ function pintaGrups(){
       const w = document.createElement("div");
       w.className = "camp";
       w.innerHTML = `<label>${esc(c.etiqueta)}</label>`;
+
+      if (c.tipus === "fitxes"){
+        w.style.gridColumn = "1 / -1";
+        w.append(editorFitxes(c, g));
+        graella.append(w);
+        return;
+      }
+
       const ctrl = controlValor(c, (g.valors && g.valors[c.clau]) || "", async v => {
         await updateDoc(doc(db,"users",uid,"grups",g.id), { ["valors."+c.clau]: v });
         avis("Desat.");
+        // si és un valor nou d'un camp de llista, ofereix afegir-lo a les opcions
+        const opc = Array.isArray(c.opcions) ? c.opcions : [];
+        if (c.tipus === "llista" && typeof v === "string" && v.trim() && !opc.includes(v.trim())){
+          if (confirm(`Vols afegir «${v.trim()}» a la llista d'opcions del camp "${c.etiqueta}"?\n\n`
+                    + "Si dius que no, el valor es desa igualment en aquest grup."))
+            await updateDoc(doc(db,"users",uid,"camps",c.id),
+                            { opcions: [...opc, v.trim()] });
+        }
       });
       w.append(ctrl.el); graella.append(w);
     });
@@ -955,7 +1143,7 @@ const normalitza = s => String(s||"").toLowerCase().normalize("NFD")
 // Troba la definició de camp que correspon a un marcador,
 // tant si s'ha escrit la clau com si s'ha escrit el nom visible
 function campDe(marcador){
-  const n = normalitza(marcador);
+  const n = normalitza(String(marcador).split(".")[0]);
   return camps.find(c => normalitza(c.clau) === n)
       || camps.find(c => normalitza(c.etiqueta) === n) || null;
 }
@@ -975,6 +1163,7 @@ function defGeneracio(clau, p){
     tipus: (loc && loc.tipus) || (glob && glob.tipus) || "text",
     opcions: (loc && loc.opcions && loc.opcions.length)
                ? loc.opcions : ((glob && glob.opcions) || []),
+    formatLlista: (glob && glob.formatLlista) || "i",
     opcional: !!(loc && loc.opcional),
     delGrup: !!glob
   };
@@ -1030,7 +1219,33 @@ function iniciarGeneracio(p){
   cont.innerHTML = claus.length ? "" :
     '<p class="muted">Aquesta plantilla no té cap camp per completar.</p>';
   const controls = [];
+  const fitxesUsades = new Map();   // camp de fitxes -> selector de fitxa (o null)
+
   claus.forEach(clau => {
+    const base = campDe(clau);
+    if (base && base.tipus === "fitxes"){
+      const sub = String(clau).split(".").slice(1).join(".");
+      if (!fitxesUsades.has(base.clau)) fitxesUsades.set(base.clau, { def: base, sel: null });
+      const info = fitxesUsades.get(base.clau);
+      const llista = (grup && grup.valors && grup.valors[base.clau]) || [];
+      if (sub && !info.sel){
+        const w = document.createElement("div");
+        w.className = "camp";
+        w.style.gridColumn = "1 / -1";
+        w.innerHTML = `<label>${esc(base.etiqueta)}: tria la fitxa</label>`;
+        const sel = document.createElement("select");
+        sel.innerHTML = llista.length
+          ? llista.map((f,i) => {
+              const primer = (base.subcamps||[])[0];
+              const nom = (primer && f[primer.clau]) || `Fitxa ${i+1}`;
+              return `<option value="${i}">${esc(nom)}</option>`;
+            }).join("")
+          : '<option value="">(aquest grup no en té cap)</option>';
+        w.append(sel); cont.append(w);
+        info.sel = sel;
+      }
+      return;
+    }
     const def = defGeneracio(clau, p);
     const w = document.createElement("div");
     w.className = "camp";
@@ -1055,6 +1270,21 @@ function iniciarGeneracio(p){
     if (dlg.returnValue !== "ok") return;
     const valors = {};
     controls.forEach(({clau, ctrl}) => valors[normalitza(clau)] = ctrl.llegir());
+
+    // camps de fitxes: la llista sencera i, si cal, la fitxa triada
+    fitxesUsades.forEach(({def, sel}) => {
+      const llista = (grup && grup.valors && grup.valors[def.clau]) || [];
+      const subs = def.subcamps || [];
+      const linies = llista.map(f => {
+        const v = {};
+        subs.forEach(s => v[normalitza(s.clau)] = f[s.clau] || "");
+        return compon(def.formatLinia || subs.map(s=>`{{${s.clau}}}`).join(": "), v);
+      }).filter(Boolean);
+      valors[normalitza(def.clau)] = linies.join("\n");
+      const triada = sel && sel.value !== "" ? llista[+sel.value] : null;
+      subs.forEach(s => valors[normalitza(def.clau + "." + s.clau)] =
+        triada ? (triada[s.clau] || "") : "");
+    });
     mostrarResultat(compon(p.cos, valors), compon(p.instruccions, valors));
   };
   dlg.returnValue = "";
@@ -1078,7 +1308,6 @@ function mostrarResultat(text, instruccions){
   const hiHa = !!(instruccions && instruccions.trim());
   $("#textInstruccions").textContent = instruccions || "";
   $("#zonaInstruccions").classList.toggle("oculta", !hiHa);
-  $("#btnCopiarInstruccions").classList.toggle("oculta", !hiHa);
   $("#dlgResultat").showModal();
   copiar(text);   // només es copia el text, mai les instruccions
 }
