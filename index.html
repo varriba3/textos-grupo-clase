@@ -191,8 +191,15 @@
     <h2 style="margin-top:0;font-size:17px">Text generat</h2>
     <textarea id="textResultat" style="min-height:260px"></textarea>
     <p class="muted">S'ha copiat automàticament al porta-retalls.</p>
+    <div id="zonaInstruccions" class="oculta"
+         style="border-left:4px solid var(--accent);background:var(--accent-soft);
+                border-radius:8px;padding:10px 14px;margin-top:12px">
+      <strong>Instruccions</strong>
+      <div id="textInstruccions" style="white-space:pre-wrap;margin-top:6px"></div>
+    </div>
   </div>
   <div class="dlg-peu">
+    <button id="btnCopiarInstruccions" class="oculta">Copia les instruccions</button>
     <button id="btnCopiarDeNou">Torna a copiar</button>
     <button id="btnTancarResultat" class="primary">Tanca</button>
   </div>
@@ -232,6 +239,9 @@
       <button id="btnTreuImatge" type="button" class="oculta">Treu la imatge pròpia</button>
     </div>
     <div class="camp"><label>Text</label><textarea id="edCos" style="min-height:220px"></textarea></div>
+    <div class="camp"><label>Instruccions posteriors (no es copien amb el text)</label>
+      <textarea id="edInstruccions" style="min-height:90px"
+        placeholder="Què cal fer després d'enganxar el text. Admet els mateixos camps i blocs opcionals."></textarea></div>
     <p class="muted">Insereix un camp del grup classe al punt on tinguis el cursor:</p>
     <div id="edCampsDisp"></div>
     <p class="muted" style="margin-top:10px">
@@ -745,7 +755,7 @@ function renderCampsPlantilla(){
   const cont = $("#edCampsPlantilla");
   const previs = llegirCampsPlantilla();          // conserva el que s'estigui editant
   const guardats = (plantillaEnEdicio && plantillaEnEdicio.campsPropis) || {};
-  const claus = clausDe($("#edCos").value);
+  const claus = clausDe($("#edCos").value + "\n" + $("#edInstruccions").value);
   cont.innerHTML = claus.length ? "" :
     '<p class="muted">Encara no hi ha cap camp dins del text.</p>';
   claus.forEach(clau => {
@@ -807,10 +817,12 @@ function llegirCampsPlantilla(){
 }
 
 let temporitzador;
-$("#edCos").addEventListener("input", () => {
+const refrescaCamps = () => {
   clearTimeout(temporitzador);
   temporitzador = setTimeout(renderCampsPlantilla, 500);
-});
+};
+$("#edCos").addEventListener("input", refrescaCamps);
+$("#edInstruccions").addEventListener("input", refrescaCamps);
 
 function obrirEdicio(p){
   plantillaEnEdicio = p;
@@ -823,6 +835,7 @@ function obrirEdicio(p){
   iconaTriada = p.iconaId || "";
   pintaSelectorColor(); pintaSelectorIcona(); pintaPreviewIcona();
   $("#edCos").value = p.cos || "";
+  $("#edInstruccions").value = p.instruccions || "";
   $("#edCampsPlantilla").innerHTML = "";
   renderCampsPlantilla();
   $("#dlgPlantilla").showModal();
@@ -838,6 +851,7 @@ $("#btnDesarPlantilla").onclick = async () => {
     iconaId: iconaTriada,
     icona: iconaTriada ? "" : iconaActual,
     cos: $("#edCos").value,
+    instruccions: $("#edInstruccions").value,
     campsPropis: llegirCampsPlantilla()
   });
   $("#dlgPlantilla").close();
@@ -984,6 +998,14 @@ function aplicaBlocsOpcionals(text, valors){
   return out;
 }
 
+/* Munta un text: esborra els blocs opcionals buits i substitueix els camps */
+function compon(text, valors){
+  if (!text) return "";
+  const amb = aplicaBlocsOpcionals(text, valors).replace(MARCADOR,
+    (_, k) => { const v = valors[normalitza(k)]; return v !== undefined ? v : ""; });
+  return netejaText(amb);
+}
+
 function netejaText(t){
   return t.replace(/[ \t]{2,}/g, " ")
           .replace(/ +([,.;:!?])/g, "$1")
@@ -996,7 +1018,7 @@ function iniciarGeneracio(p){
   const grup = grups.find(g => g.id === $("#selGrup").value);
   // primer els camps del grup classe, en l'ordre de la pestanya «Camps»;
   // després els camps propis de la plantilla, en l'ordre en què surten al text
-  const original = clausDe(p.cos);
+  const original = clausDe((p.cos||"") + "\n" + (p.instruccions||""));
   const posicio = clau => {
     const g = campDe(clau);
     return g ? camps.indexOf(g) : 1000 + original.indexOf(clau);
@@ -1033,10 +1055,7 @@ function iniciarGeneracio(p){
     if (dlg.returnValue !== "ok") return;
     const valors = {};
     controls.forEach(({clau, ctrl}) => valors[normalitza(clau)] = ctrl.llegir());
-    let text = aplicaBlocsOpcionals(p.cos, valors);
-    text = text.replace(MARCADOR,
-      (_, k) => { const v = valors[normalitza(k)]; return v !== undefined ? v : ""; });
-    mostrarResultat(netejaText(text));
+    mostrarResultat(compon(p.cos, valors), compon(p.instruccions, valors));
   };
   dlg.returnValue = "";
   dlg.showModal();
@@ -1045,17 +1064,25 @@ function iniciarGeneracio(p){
 async function copiar(text){
   try { await navigator.clipboard.writeText(text); avis("Copiat al porta-retalls."); }
   catch(e){
-    const ta = $("#textResultat"); ta.focus(); ta.select();
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.append(ta); ta.focus(); ta.select();
     try { document.execCommand("copy"); avis("Copiat al porta-retalls."); }
     catch(_){ avis("Copia'l manualment (Ctrl+C)."); }
+    ta.remove();
   }
 }
 
-function mostrarResultat(text){
+function mostrarResultat(text, instruccions){
   $("#textResultat").value = text;
+  const hiHa = !!(instruccions && instruccions.trim());
+  $("#textInstruccions").textContent = instruccions || "";
+  $("#zonaInstruccions").classList.toggle("oculta", !hiHa);
+  $("#btnCopiarInstruccions").classList.toggle("oculta", !hiHa);
   $("#dlgResultat").showModal();
-  copiar(text);
+  copiar(text);   // només es copia el text, mai les instruccions
 }
+$("#btnCopiarInstruccions").onclick = () => copiar($("#textInstruccions").textContent);
 $("#btnCopiarDeNou").onclick = () => copiar($("#textResultat").value);
 $("#btnTancarResultat").onclick = () => $("#dlgResultat").close();
 </script>
