@@ -88,6 +88,7 @@
       <button data-tab="camps" role="tab" aria-selected="false">Camps</button>
       <button data-tab="plantilles" role="tab" aria-selected="false">Plantilles</button>
       <button data-tab="icones" role="tab" aria-selected="false">Icones</button>
+      <button data-tab="curriculum" role="tab" aria-selected="false">Currículum</button>
     </div>
 
     <!-- GENERAR -->
@@ -167,6 +168,33 @@
       </div>
       <div id="llistaIcones" class="grid"></div>
     </section>
+
+    <!-- CURRÍCULUM -->
+    <section id="tab-curriculum" class="oculta">
+      <div class="panel">
+        <p class="muted">Cada fitxa és una <strong>competència específica</strong> amb els seus
+          criteris d'avaluació, d'una assignatura i un curs concrets.</p>
+        <div class="row">
+          <input id="curAssig" list="dlAssig" placeholder="Assignatura (p. ex. Educació Física)">
+          <input id="curEtapa" list="dlEtapa" placeholder="Curs (p. ex. 1r-2n ESO)">
+        </div>
+        <div class="row">
+          <input id="curTitol" placeholder="Competència específica">
+          <button class="primary" id="btnAfegirComp">Afegeix competència</button>
+        </div>
+        <datalist id="dlAssig"></datalist>
+        <datalist id="dlEtapa"></datalist>
+      </div>
+      <div class="panel">
+        <div class="row">
+          <div style="flex:1"><label>Mostra l'assignatura</label>
+            <select id="filtreAssig"></select></div>
+          <div style="flex:1"><label>Mostra el curs</label>
+            <select id="filtreEtapa"></select></div>
+        </div>
+      </div>
+      <div id="llistaCurriculum"></div>
+    </section>
   </div>
 </main>
 
@@ -227,6 +255,42 @@
   <div class="dlg-peu">
     <button id="btnCancelOpcions">Cancel·la</button>
     <button id="btnDesarOpcions" class="primary">Desa</button>
+  </div>
+</dialog>
+
+<!-- Diàleg: editar una competència i els seus criteris -->
+<dialog id="dlgComp">
+  <div class="dlg-cos">
+    <h2 style="margin-top:0;font-size:17px">Competència i criteris</h2>
+    <div class="row">
+      <div style="flex:1"><label>Assignatura</label><input id="compAssig" list="dlAssig"></div>
+      <div style="flex:1"><label>Curs</label><input id="compEtapa" list="dlEtapa"></div>
+    </div>
+    <div class="camp" style="margin-top:10px"><label>Competència específica</label>
+      <input id="compTitol"></div>
+    <div class="camp"><label>Criteris d'avaluació (un per línia)</label>
+      <textarea id="compCriteris" style="min-height:200px"></textarea></div>
+  </div>
+  <div class="dlg-peu">
+    <button id="btnCancelComp">Cancel·la</button>
+    <button id="btnDesarComp" class="primary">Desa</button>
+  </div>
+</dialog>
+
+<!-- Diàleg: configuració d'un camp de criteris -->
+<dialog id="dlgConfigCriteris">
+  <div class="dlg-cos">
+    <h2 id="ccTitol" style="margin-top:0;font-size:17px"></h2>
+    <p class="muted">Digues de quins camps del grup classe s'han de llegir l'assignatura
+      i el curs. Així els criteris que surten són sempre els que toquen.</p>
+    <div class="camp"><label>Camp que conté l'assignatura</label>
+      <select id="ccAssig"></select></div>
+    <div class="camp"><label>Camp que conté el curs</label>
+      <select id="ccEtapa"></select></div>
+  </div>
+  <div class="dlg-peu">
+    <button id="btnCancelCC">Cancel·la</button>
+    <button id="btnDesarCC" class="primary">Desa</button>
   </div>
 </dialog>
 
@@ -321,6 +385,7 @@ let camps = [];       // [{id, etiqueta, clau}]
 let grups = [];       // [{id, nom, valors:{clau:valor}}]
 let plantilles = [];  // [{id, titol, categories, cos, color, emoji, iconaId}]
 let icones = [];      // [{id, nom, dades}]
+let curriculum = [];  // [{id, assignatura, etapa, titol, criteris:[], ordre}]
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
@@ -384,6 +449,14 @@ function escoltarDades(){
       icones = s.docs.map(d => ({ id:d.id, ...d.data() }))
                      .sort((a,b)=> (a.nom||"").localeCompare(b.nom||""));
       pintaIcones(); pintaSelectorIcona(); pintaPlantilles(); pintaBotons();
+    }),
+    onSnapshot(col("curriculum"), s => {
+      curriculum = s.docs.map(d => ({ id:d.id, ...d.data() }))
+        .sort((a,b)=> (a.assignatura||"").localeCompare(b.assignatura||"")
+                   || (a.etapa||"").localeCompare(b.etapa||"")
+                   || (a.ordre ?? 9999) - (b.ordre ?? 9999)
+                   || (a.titol||"").localeCompare(b.titol||""));
+      pintaCurriculum();
     })
   ];
 }
@@ -392,7 +465,7 @@ function escoltarDades(){
 document.querySelectorAll(".tabs button").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x===b));
-    ["generar","grups","camps","plantilles","icones"].forEach(t =>
+    ["generar","grups","camps","plantilles","icones","curriculum"].forEach(t =>
       $("#tab-"+t).classList.toggle("oculta", t !== b.dataset.tab));
   };
 });
@@ -527,8 +600,10 @@ function pintaCamps(){
                        + '<option value="llarg">Text llarg (diverses línies)</option>'
                        + '<option value="llista">Llista d\'opcions</option>'
                        + '<option value="multiple">Llista d\'opcions (en pots triar diverses)</option>'
-                       + '<option value="fitxes">Fitxes (diverses entrades amb subcamps)</option>';
-    selTipus.value = ["llarg","llista","multiple","fitxes"].includes(c.tipus) ? c.tipus : "text";
+                       + '<option value="fitxes">Fitxes (diverses entrades amb subcamps)</option>'
+                       + '<option value="criteris">Criteris d\'avaluació del currículum</option>';
+    selTipus.value = ["llarg","llista","multiple","fitxes","criteris"].includes(c.tipus)
+                       ? c.tipus : "text";
     selTipus.onchange = async () => {
       await updateDoc(doc(db,"users",uid,"camps",c.id), { tipus: selTipus.value });
       avis("Desat.");
@@ -540,6 +615,12 @@ function pintaCamps(){
       bOpc.textContent = `Edita les opcions (${opcions.length})`;
       bOpc.onclick = () => obrirOpcions(c);
       fila.append(bOpc);
+    }
+    if (c.tipus === "criteris"){
+      const bC = document.createElement("button");
+      bC.textContent = "Configura l'origen de les dades";
+      bC.onclick = () => obrirConfigCriteris(c);
+      fila.append(bC);
     }
     if (c.tipus === "fitxes"){
       const bF = document.createElement("button");
@@ -604,6 +685,30 @@ $("#btnDesarOpcions").onclick = async () => {
       tipus: campEnEdicio.tipus === "multiple" ? "multiple" : "llista" });
   $("#dlgOpcions").close();
   avis("Opcions desades.");
+};
+
+/* Diàleg: d'on surten l'assignatura i el curs per als criteris */
+let campCriteris = null;
+function obrirConfigCriteris(c){
+  campCriteris = c;
+  $("#ccTitol").textContent = "Criteris de: " + c.etiqueta;
+  const tria = camps.filter(x => !["criteris","fitxes"].includes(x.tipus))
+    .map(x => `<option value="${esc(x.clau)}">${esc(x.etiqueta)}</option>`).join("");
+  $("#ccAssig").innerHTML = '<option value="">(cap)</option>' + tria;
+  $("#ccEtapa").innerHTML = '<option value="">(cap)</option>' + tria;
+  $("#ccAssig").value = c.campAssignatura || "";
+  $("#ccEtapa").value = c.campEtapa || "";
+  $("#dlgConfigCriteris").showModal();
+}
+$("#btnCancelCC").onclick = () => $("#dlgConfigCriteris").close();
+$("#btnDesarCC").onclick = async () => {
+  await updateDoc(doc(db,"users",uid,"camps",campCriteris.id), {
+    campAssignatura: $("#ccAssig").value,
+    campEtapa: $("#ccEtapa").value,
+    tipus: "criteris"
+  });
+  $("#dlgConfigCriteris").close();
+  avis("Desat.");
 };
 
 /* Diàleg de configuració d'un camp de fitxes */
@@ -715,6 +820,13 @@ function pintaGrups(){
       const w = document.createElement("div");
       w.className = "camp";
       w.innerHTML = `<label>${esc(c.etiqueta)}</label>`;
+
+      if (c.tipus === "criteris"){
+        w.innerHTML += '<p class="muted">Es tria en generar cada text, segons '
+                     + "l'assignatura i el curs d'aquest grup.</p>";
+        graella.append(w);
+        return;
+      }
 
       if (c.tipus === "fitxes"){
         w.style.gridColumn = "1 / -1";
@@ -877,6 +989,106 @@ function pintaPreviewIcona(){
 }
 
 $("#btnTreuImatge").onclick = () => { iconaActual = ""; pintaPreviewIcona(); };
+
+/* ---------- Currículum: competències i criteris ---------- */
+let compEnEdicio = null;
+
+$("#btnAfegirComp").onclick = async () => {
+  const assignatura = $("#curAssig").value.trim();
+  const etapa = $("#curEtapa").value.trim();
+  const titol = $("#curTitol").value.trim();
+  if (!assignatura || !etapa) return avis("Posa l'assignatura i el curs.");
+  if (!titol) return avis("Escriu la competència específica.");
+  const germanes = curriculum.filter(c =>
+    c.assignatura === assignatura && c.etapa === etapa);
+  const ref = await addDoc(col("curriculum"),
+    { assignatura, etapa, titol, criteris: [], ordre: germanes.length });
+  $("#curTitol").value = "";
+  setTimeout(() => obrirComp({ id:ref.id, assignatura, etapa, titol, criteris:[] }), 300);
+};
+
+function obrirComp(c){
+  compEnEdicio = c;
+  $("#compAssig").value = c.assignatura || "";
+  $("#compEtapa").value = c.etapa || "";
+  $("#compTitol").value = c.titol || "";
+  $("#compCriteris").value = (c.criteris || []).join("\n");
+  $("#dlgComp").showModal();
+}
+$("#btnCancelComp").onclick = () => $("#dlgComp").close();
+$("#btnDesarComp").onclick = async () => {
+  await updateDoc(doc(db,"users",uid,"curriculum",compEnEdicio.id), {
+    assignatura: $("#compAssig").value.trim(),
+    etapa: $("#compEtapa").value.trim(),
+    titol: $("#compTitol").value.trim(),
+    criteris: $("#compCriteris").value.split("\n").map(s=>s.trim()).filter(Boolean)
+  });
+  $("#dlgComp").close();
+  avis("Competència desada.");
+};
+
+const assignatures = () => [...new Set(curriculum.map(c=>c.assignatura).filter(Boolean))].sort();
+const etapes = () => [...new Set(curriculum.map(c=>c.etapa).filter(Boolean))].sort();
+
+function omplePicker(sel, valors, etiquetaTot){
+  const previ = sel.value;
+  sel.innerHTML = `<option value="">${etiquetaTot}</option>`
+    + valors.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  if (valors.includes(previ)) sel.value = previ;
+}
+
+function pintaCurriculum(){
+  $("#dlAssig").innerHTML = assignatures().map(v=>`<option value="${esc(v)}">`).join("");
+  $("#dlEtapa").innerHTML = etapes().map(v=>`<option value="${esc(v)}">`).join("");
+  omplePicker($("#filtreAssig"), assignatures(), "Totes les assignatures");
+  omplePicker($("#filtreEtapa"), etapes(), "Tots els cursos");
+
+  const fa = $("#filtreAssig").value, fe = $("#filtreEtapa").value;
+  const llista = curriculum.filter(c =>
+    (!fa || c.assignatura === fa) && (!fe || c.etapa === fe));
+
+  const cont = $("#llistaCurriculum");
+  cont.innerHTML = llista.length ? "" :
+    '<p class="muted">Encara no hi ha cap competència amb aquests filtres.</p>';
+
+  llista.forEach((c, i) => {
+    const d = document.createElement("div");
+    d.className = "llista-item";
+    d.innerHTML = `<h3>${esc(c.titol)}</h3>
+      <p class="muted">${esc(c.assignatura)} · ${esc(c.etapa)} ·
+         ${(c.criteris||[]).length} criteris</p>
+      <ul class="muted" style="margin:6px 0 10px;padding-left:18px">${
+        (c.criteris||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`;
+    const bE = document.createElement("button"); bE.textContent = "Edita";
+    bE.onclick = () => obrirComp(c);
+    const bUp = document.createElement("button"); bUp.textContent = "▲";
+    bUp.title = "Puja dins la seva assignatura i curs";
+    bUp.onclick = () => moureComp(c, -1);
+    const bDn = document.createElement("button"); bDn.textContent = "▼";
+    bDn.title = "Baixa dins la seva assignatura i curs";
+    bDn.onclick = () => moureComp(c, 1);
+    const bX = document.createElement("button");
+    bX.className = "danger"; bX.textContent = "Elimina";
+    bX.onclick = async () => {
+      if (confirm(`Vols eliminar la competència "${c.titol}"?`))
+        await deleteDoc(doc(db,"users",uid,"curriculum",c.id));
+    };
+    d.append(bE, " ", bUp, bDn, " ", bX);
+    cont.append(d);
+  });
+}
+$("#filtreAssig").onchange = pintaCurriculum;
+$("#filtreEtapa").onchange = pintaCurriculum;
+
+async function moureComp(c, dir){
+  const germanes = curriculum.filter(x =>
+    x.assignatura === c.assignatura && x.etapa === c.etapa);
+  const i = germanes.findIndex(x => x.id === c.id), j = i + dir;
+  if (j < 0 || j >= germanes.length) return;
+  [germanes[i], germanes[j]] = [germanes[j], germanes[i]];
+  await Promise.all(germanes.map((x,k) =>
+    updateDoc(doc(db,"users",uid,"curriculum",x.id), { ordre: k })));
+}
 
 /* ---------- Biblioteca d'icones ---------- */
 let iconaTriada = "";
@@ -1224,6 +1436,89 @@ function netejaText(t){
           .trim();
 }
 
+/* Control de criteris: caselles agrupades per competència, filtrades
+   per l'assignatura i el curs que marca el grup classe */
+function controlCriteris(def, grup){
+  const wrap = document.createElement("div");
+  const capsa = document.createElement("div");
+  const triats = new Set();
+
+  const valorDe = clau => {
+    const v = grup && grup.valors ? grup.valors[clau] : "";
+    return Array.isArray(v) ? v.join(" ") : (v || "");
+  };
+  const fila = document.createElement("div");
+  fila.className = "row";
+  const selA = document.createElement("select");
+  const selE = document.createElement("select");
+  const posa = (sel, valors, valorGrup) => {
+    sel.innerHTML = valors.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("")
+      || '<option value="">(res al currículum)</option>';
+    const trobat = valors.find(v => normalitza(v) === normalitza(valorGrup));
+    if (trobat) sel.value = trobat;
+  };
+  posa(selA, assignatures(), valorDe(def.campAssignatura));
+  posa(selE, etapes(), valorDe(def.campEtapa));
+  fila.append(selA, selE);
+
+  const pinta = () => {
+    capsa.innerHTML = "";
+    triats.clear();
+    const llista = curriculum.filter(c =>
+      normalitza(c.assignatura) === normalitza(selA.value) &&
+      normalitza(c.etapa) === normalitza(selE.value));
+    if (!llista.length){
+      capsa.innerHTML = '<p class="muted">No hi ha competències per a aquesta '
+                      + 'assignatura i aquest curs. Afegeix-les a la pestanya «Currículum».</p>';
+      return;
+    }
+    llista.forEach(c => {
+      const bloc = document.createElement("div");
+      bloc.style.marginBottom = "10px";
+      const cap = document.createElement("label");
+      cap.style.cssText = "display:flex;gap:6px;align-items:center;color:inherit;font-weight:600";
+      const tots = document.createElement("input");
+      tots.type = "checkbox"; tots.style.width = "auto";
+      cap.append(tots, document.createTextNode(c.titol));
+      bloc.append(cap);
+      const caselles = [];
+      (c.criteris||[]).forEach(cr => {
+        const lab = document.createElement("label");
+        lab.style.cssText = "display:flex;gap:6px;align-items:flex-start;color:inherit;margin:2px 0 0 18px";
+        const chk = document.createElement("input");
+        chk.type = "checkbox"; chk.style.width = "auto";
+        chk.onchange = () => {
+          chk.checked ? triats.add(c.id + "||" + cr) : triats.delete(c.id + "||" + cr);
+          tots.checked = caselles.every(x => x.checked);
+        };
+        caselles.push(chk);
+        lab.append(chk, document.createTextNode(cr));
+        bloc.append(lab);
+      });
+      tots.onchange = () => caselles.forEach(x => {
+        if (x.checked !== tots.checked){ x.checked = tots.checked; x.onchange(); }
+      });
+      capsa.append(bloc);
+    });
+  };
+  selA.onchange = pinta; selE.onchange = pinta;
+  pinta();
+
+  capsa.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:10px;"
+                      + "max-height:340px;overflow:auto;margin-top:8px";
+  wrap.append(fila, capsa);
+
+  const llegir = () => {
+    const blocs = [];
+    curriculum.forEach(c => {
+      const seus = (c.criteris||[]).filter(cr => triats.has(c.id + "||" + cr));
+      if (seus.length) blocs.push([c.titol, ...seus].join("\n"));
+    });
+    return blocs.join("\n\n");
+  };
+  return { el: wrap, llegir, ample: true };
+}
+
 function iniciarGeneracio(p){
   const grup = grups.find(g => g.id === $("#selGrup").value);
   // primer els camps del grup classe, en l'ordre de la pestanya «Camps»;
@@ -1274,7 +1569,9 @@ function iniciarGeneracio(p){
       def.opcional ? ' <span class="muted">(opcional)</span>' : ""}${
       def.delGrup ? "" : ' <span class="muted">· camp d\'aquesta plantilla</span>'}</label>`;
     const inicial = def.delGrup && grup && grup.valors ? (grup.valors[def.clau] || "") : "";
-    const ctrl = controlValor(def, inicial);
+    const ctrl = def.tipus === "criteris"
+      ? controlCriteris(campDe(clau) || def, grup)
+      : controlValor(def, inicial);
     if (ctrl.ample) w.style.gridColumn = "1 / -1";
     controls.push({ clau, def, ctrl });
     w.append(ctrl.el); cont.append(w);
